@@ -1,11 +1,11 @@
-import * as pc from 'playcanvas';
+import { Vec3 } from '../core/math.js';
 import { createAllStarModel } from '../characters/Characters.js';
 import { PLAYER, WORLD, COMBAT } from '../config.js';
 import { clamp, damp, dampAngle, headingFromDir, dirFromHeading, DEG } from '../core/MathUtils.js';
 import { GrappleSystem } from './GrappleSystem.js';
 
-const tmpV = new pc.Vec3();
-const tmpV2 = new pc.Vec3();
+const tmpV = new Vec3();
+const tmpV2 = new Vec3();
 
 /**
  * All-Star character controller: walk / run / sprint, jump, cape glide, ledge
@@ -14,12 +14,12 @@ const tmpV2 = new pc.Vec3();
 export class Player {
     constructor(game, spawn) {
         this.game = game;
-        this.app = game.app;
+        this.gfx = game.gfx;
         this.physics = game.physics;
-        this.model = createAllStarModel(this.app);
-        this.app.root.addChild(this.model.root);
+        this.model = createAllStarModel(this.gfx);
+        this.gfx.add(this.model.root);
 
-        this.body = { pos: spawn.clone(), vel: new pc.Vec3(), radius: PLAYER.radius, height: PLAYER.height, grounded: false };
+        this.body = { pos: spawn.clone(), vel: new Vec3(), radius: PLAYER.radius, height: PLAYER.height, grounded: false };
         this.heading = 0;
         this.state = 'ground';
         this.stateTime = 0;
@@ -30,16 +30,15 @@ export class Player {
         this.coyote = 0;
         this.glideSpeed = 0;
         this.mantle = null;
-        this.dodgeDir = new pc.Vec3();
-        this.knock = new pc.Vec3();
+        this.dodgeDir = new Vec3();
+        this.knock = new Vec3();
         this.checkpoint = spawn.clone();
         this.anim = { state: 'idle', speed: 0 };
         this.grapple = new GrappleSystem(game, this);
 
         // Soft cinematic key light that follows the camera so the dark suit reads at night.
-        this.keyLight = new pc.Entity('HeroKeyLight');
-        this.keyLight.addComponent('light', { type: 'omni', color: new pc.Color(0.65, 0.78, 1.0), intensity: 1.1, range: 12, castShadows: false, falloffMode: pc.LIGHTFALLOFF_LINEAR });
-        this.app.root.addChild(this.keyLight);
+        this.keyLight = this.gfx.pointLight({ name: 'HeroKeyLight', color: [0.65, 0.78, 1.0], intensity: 1.1, range: 12, falloff: 'linear' });
+        this.gfx.add(this.keyLight);
     }
 
     get pos() { return this.body.pos; }
@@ -53,7 +52,7 @@ export class Player {
     }
 
     /** Camera-relative desired move direction (XZ) scaled by stick magnitude. */
-    moveDir(input, out = new pc.Vec3()) {
+    moveDir(input, out = new Vec3()) {
         const yaw = this.game.camera.yaw * Math.PI / 180;
         const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
         const rx = Math.cos(yaw), rz = -Math.sin(yaw);
@@ -238,7 +237,7 @@ export class Player {
         if (dir.x * n.x + dir.z * n.z > -0.3) return false;
         const tx = b.pos.x - n.x * (b.radius * 2 + 0.2), tz = b.pos.z - n.z * (b.radius * 2 + 0.2);
         if (!this.physics._free(tx, top + 0.02, tz, b.radius, b.height, this.physics.query(tx - 2, tz - 2, tx + 2, tz + 2))) return false;
-        this.mantle = { from: b.pos.clone(), to: new pc.Vec3(tx, top + 0.02, tz), t: 0, dur: 0.18 + rise * 0.1 };
+        this.mantle = { from: b.pos.clone(), to: new Vec3(tx, top + 0.02, tz), t: 0, dur: 0.18 + rise * 0.1 };
         this.heading = headingFromDir(-n.x, -n.z);
         this.setState('mantle');
         return true;

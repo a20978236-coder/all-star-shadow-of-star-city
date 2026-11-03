@@ -1,4 +1,3 @@
-import * as pc from 'playcanvas';
 
 /**
  * Accumulates static geometry (boxes, prisms, quads) into one mesh so the
@@ -109,17 +108,14 @@ export class GeometryBatch {
     }
 
     /** Build an entity rendering this batch. Returns the entity (or null when empty). */
-    build(app, material, parent, name = 'batch', { castShadows = true, receiveShadows = true } = {}) {
+    build(g, material, parent, name = 'batch', { castShadows = true, receiveShadows = true } = {}) {
         if (this.indices.length === 0) return null;
-        const mesh = new pc.Mesh(app.graphicsDevice);
-        mesh.setPositions(new Float32Array(this.positions));
-        mesh.setNormals(new Float32Array(this.normals));
-        mesh.setUvs(0, new Float32Array(this.uvs));
-        mesh.setIndices(this.vertexCount > 65535 ? new Uint32Array(this.indices) : new Uint16Array(this.indices));
-        mesh.update(pc.PRIMITIVE_TRIANGLES);
-        const mi = new pc.MeshInstance(mesh, material);
-        const e = new pc.Entity(name);
-        e.addComponent('render', { meshInstances: [mi], castShadows, receiveShadows });
+        const e = g.customMesh({
+            positions: new Float32Array(this.positions),
+            normals: new Float32Array(this.normals),
+            uvs: new Float32Array(this.uvs),
+            indices: this.vertexCount > 65535 ? new Uint32Array(this.indices) : new Uint16Array(this.indices)
+        }, material, { castShadows, receiveShadows, name });
         parent.addChild(e);
         return e;
     }

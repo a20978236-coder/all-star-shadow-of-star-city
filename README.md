@@ -12,6 +12,22 @@ It runs in desktop browsers (keyboard + mouse) and on iPhone Safari (touch contr
 
 ---
 
+## Two renderers, one game
+
+The game now ships with **two interchangeable renderers** that share all gameplay code
+(player, combat, enemies, grapple, bike, missions, physics, input, touch controls, HUD):
+
+| Page | Renderer | Status |
+| --- | --- | --- |
+| `index.html` → `src/main.js` | PlayCanvas 2.23.3 | The live game |
+| `three/index.html` → `src/three/main.js` | Three.js 0.180 | Side-by-side port (preview) |
+
+Rendering goes through a small graphics layer (`src/gfx/gfx.js`) implemented by
+`src/gfx/PcGfx.js` and `src/gfx/ThreeGfx.js`. The Three.js node wrapper mirrors the subset of
+the PlayCanvas Entity API the game uses (same euler order, `-Z` forward, spot lights along `-Y`),
+so gameplay code is renderer-agnostic. During development open `http://localhost:5173/three/`
+for the Three.js version; on GitHub Pages it lives at `…/three/`.
+
 ## Quick start
 
 Requirements: **Node.js 18+** (20 or 22 recommended) and npm.
@@ -140,8 +156,14 @@ resolution, rain density, light count and disables shadows for performance.
 index.html                 Page shell (canvas + UI root, iOS meta tags)
 vite.config.js             Vite config (LAN dev server, relative base)
 public/favicon.svg
+three/index.html           Three.js page
 src/
-  main.js                  Entry point
+  main.js                  Entry point (PlayCanvas)
+  three/main.js            Entry point (Three.js)
+  three/ThreeEnvironment.js  Three.js sky, fog, moonlight, IBL, rain, splashes, lightning
+  gfx/gfx.js               Renderer-agnostic graphics layer (contract)
+  gfx/PcGfx.js             PlayCanvas backend
+  gfx/ThreeGfx.js          Three.js backend (Entity-like node wrapper, materials, post FX)
   Game.js                  Creates the PlayCanvas app and wires all systems; main update loop
   config.js                All gameplay tuning values + quality presets (mobile vs desktop)
   core/
@@ -151,7 +173,7 @@ src/
     MathUtils.js           Math helpers + deterministic RNG
   world/
     City.js                Procedural districts, buildings, rooftops, props, signs, lamps, light pool, minimap image
-    Environment.js         Moonlight, fog, sky dome, moon, rain
+    Environment.js         PlayCanvas moonlight, fog, sky dome, moon, rain
     GeometryBatch.js       Merges static geometry into a few meshes
     Materials.js           Material helpers (lit, neon/emissive)
     Textures.js            Canvas-generated textures + normal/gloss maps (facades, roads, sidewalks, shops, suit)

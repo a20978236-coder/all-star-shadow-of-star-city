@@ -1,10 +1,10 @@
-import * as pc from 'playcanvas';
+import { Vec3 } from '../core/math.js';
 import { createChaosModel } from '../characters/Characters.js';
 import { ENEMY, WORLD, COLORS } from '../config.js';
 import { headingFromDir, dampAngle, DEG } from '../core/MathUtils.js';
 import { neonMaterial } from '../world/Materials.js';
 
-const tmp = new pc.Vec3();
+const tmp = new Vec3();
 let warnMat = null;
 
 /**
@@ -21,25 +21,24 @@ export class Enemy {
         this.maxHealth = brute ? 6 : 3;
         this.health = this.maxHealth;
         this.radius = brute ? 0.5 : 0.4;
-        this.body = { pos: pos.clone(), vel: new pc.Vec3(), radius: this.radius, height: brute ? 2.2 : 1.8, grounded: false };
+        this.body = { pos: pos.clone(), vel: new Vec3(), radius: this.radius, height: brute ? 2.2 : 1.8, grounded: false };
         this.home = pos.clone();
         this.heading = Math.random() * Math.PI * 2;
         this.state = 'patrol';
         this.stateTime = 0;
         this.patrolTarget = null;
         this.orbitDir = Math.random() < 0.5 ? -1 : 1;
-        this.knock = new pc.Vec3();
+        this.knock = new Vec3();
         this.flash = 0;
         this.removeTimer = 0;
 
-        this.model = createChaosModel(game.app, variant);
-        game.app.root.addChild(this.model.root);
+        this.model = createChaosModel(game.gfx, variant);
+        game.gfx.add(this.model.root);
         if (!warnMat) warnMat = neonMaterial(COLORS.neonCyan, 9);
-        this.warn = new pc.Entity('counterWarning');
-        this.warn.addComponent('render', { type: 'box', material: warnMat, castShadows: false, receiveShadows: false });
+        this.warn = game.gfx.mesh('box', warnMat, { castShadows: false, receiveShadows: false, name: 'counterWarning' });
         this.warn.setLocalScale(0.3, 0.3, 0.3);
         this.warn.enabled = false;
-        game.app.root.addChild(this.warn);
+        game.gfx.add(this.warn);
         this.anim = { state: 'idle', speed: 0 };
     }
 
@@ -69,7 +68,7 @@ export class Enemy {
                 }
                 if (!this.patrolTarget || this.stateTime > 6) {
                     const a = Math.random() * Math.PI * 2, r = Math.random() * 5;
-                    this.patrolTarget = new pc.Vec3(this.home.x + Math.cos(a) * r, 0, this.home.z + Math.sin(a) * r);
+                    this.patrolTarget = new Vec3(this.home.x + Math.cos(a) * r, 0, this.home.z + Math.sin(a) * r);
                     this.stateTime = 0;
                 }
                 const tx = this.patrolTarget.x - b.pos.x, tz = this.patrolTarget.z - b.pos.z;
@@ -213,9 +212,7 @@ export class Enemy {
         if (this.flash > 0) {
             this.flash -= dt;
             const m = this.model.suitMaterial;
-            m.emissive = this.flash > 0 ? new pc.Color(1, 1, 1) : new pc.Color(0, 0, 0);
-            m.emissiveIntensity = this.flash > 0 ? 1.5 : 1;
-            m.update();
+            this.game.gfx.setEmissive(m, this.flash > 0 ? [1, 1, 1] : [0, 0, 0], this.flash > 0 ? 1.5 : 1);
         }
         const tele = this.state === 'windup';
         this.warn.enabled = tele;

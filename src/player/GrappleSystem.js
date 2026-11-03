@@ -1,11 +1,11 @@
-import * as pc from 'playcanvas';
+import { Vec3 } from '../core/math.js';
 import { GRAPPLE, WORLD } from '../config.js';
 import { neonMaterial } from '../world/Materials.js';
 import { headingFromDir, dirFromHeading, dampAngle, clamp, DEG } from '../core/MathUtils.js';
 import { COLORS } from '../config.js';
 
-const tmp = new pc.Vec3();
-const tmp2 = new pc.Vec3();
+const tmp = new Vec3();
+const tmp2 = new Vec3();
 
 /**
  * Two traversal tools:
@@ -18,24 +18,22 @@ export class GrappleSystem {
         this.player = player;
         this.physics = game.physics;
         this.zipTarget = null;      // latest valid zip target under the crosshair
-        this.anchor = new pc.Vec3();
+        this.anchor = new Vec3();
         this.ropeLength = 0;
         this.swingTime = 0;
         this.swingPitch = 0;
         this.cooldown = 0;
 
         const mat = neonMaterial([0.75, 1.0, 0.85], 2.2);
-        this.rope = new pc.Entity('GrappleLine');
-        this.rope.addComponent('render', { type: 'box', material: mat, castShadows: false, receiveShadows: false });
+        this.rope = game.gfx.mesh('box', mat, { castShadows: false, receiveShadows: false, name: 'GrappleLine' });
         this.rope.enabled = false;
-        game.app.root.addChild(this.rope);
+        game.gfx.add(this.rope);
 
         const hookMat = neonMaterial(COLORS.neonGreen, 5);
-        this.hook = new pc.Entity('GrappleHook');
-        this.hook.addComponent('render', { type: 'sphere', material: hookMat, castShadows: false });
+        this.hook = game.gfx.mesh('sphere', hookMat, { castShadows: false, name: 'GrappleHook' });
         this.hook.setLocalScale(0.35, 0.35, 0.35);
         this.hook.enabled = false;
-        game.app.root.addChild(this.hook);
+        game.gfx.add(this.hook);
     }
 
     /** Called every frame (before state update) to look for targets and react to input. */
@@ -73,12 +71,12 @@ export class GrappleSystem {
         } else if (Math.abs(hit.normal.y) < 0.1) {
             const top = box.max[1];
             normal = hit.normal.clone();
-            edge = new pc.Vec3(hit.point.x + normal.x * 0.5, top + 0.2, hit.point.z + normal.z * 0.5);
+            edge = new Vec3(hit.point.x + normal.x * 0.5, top + 0.2, hit.point.z + normal.z * 0.5);
         } else return null;
         const dist = edge.distance(p);
         if (dist > GRAPPLE.zipRange || dist < 3) return null;
         if (edge.y < p.y - 1 && dist < 12) return null;
-        stand = normal ? new pc.Vec3(edge.x - normal.x * 1.2, edge.y, edge.z - normal.z * 1.2) : edge.clone();
+        stand = normal ? new Vec3(edge.x - normal.x * 1.2, edge.y, edge.z - normal.z * 1.2) : edge.clone();
         return { edge, stand, normal, dist };
     }
 
@@ -139,11 +137,11 @@ export class GrappleSystem {
         const yaw = cam.yaw * Math.PI / 180;
         const fwd = hs > 4 ? tmp.set(b.vel.x / hs, 0, b.vel.z / hs) : tmp.set(-Math.sin(yaw), 0, -Math.cos(yaw));
         const right = tmp2.set(-fwd.z, 0, fwd.x);
-        const origin = new pc.Vec3(p.pos.x, p.pos.y + 1.6, p.pos.z);
+        const origin = new Vec3(p.pos.x, p.pos.y + 1.6, p.pos.z);
         let best = null, bestScore = -Infinity;
         const elevs = [55, 68, 42, 78];
         const sides = [0, -0.7, 0.7, -1.4, 1.4];
-        const dir = new pc.Vec3();
+        const dir = new Vec3();
         for (const e of elevs) {
             const ce = Math.cos(e * Math.PI / 180), se = Math.sin(e * Math.PI / 180);
             for (const s of sides) {
@@ -256,11 +254,11 @@ export class GrappleSystem {
 
     _updateRope(extend) {
         const p = this.player;
-        const hand = new pc.Vec3(p.pos.x, p.pos.y + (p.state === 'swing' ? 2.0 : 1.5), p.pos.z);
-        const end = new pc.Vec3().lerp(hand, this.anchor, extend);
+        const hand = new Vec3(p.pos.x, p.pos.y + (p.state === 'swing' ? 2.0 : 1.5), p.pos.z);
+        const end = new Vec3().lerp(hand, this.anchor, extend);
         const len = hand.distance(end);
         if (len < 0.05) return;
-        const mid = new pc.Vec3().lerp(hand, end, 0.5);
+        const mid = new Vec3().lerp(hand, end, 0.5);
         this.rope.setPosition(mid);
         this.rope.lookAt(end);
         this.rope.setLocalScale(0.035, 0.035, len);

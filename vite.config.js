@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { resolve } from 'node:path';
 
 export default defineConfig({
     // Relative base so the production build works from any static host / sub-folder.
@@ -14,6 +15,15 @@ export default defineConfig({
     },
     build: {
         target: 'es2022',
-        chunkSizeWarningLimit: 4000
+        chunkSizeWarningLimit: 4000,
+        rollupOptions: {
+            // Two pages share all gameplay code:
+            //   index.html        -> PlayCanvas renderer (the live game)
+            //   three/index.html  -> Three.js renderer (side-by-side port)
+            input: {
+                main: resolve(__dirname, 'index.html'),
+                three: resolve(__dirname, 'three/index.html')
+            }
+        }
     }
 });

@@ -1,4 +1,4 @@
-import * as pc from 'playcanvas';
+import { Vec3 } from './math.js';
 
 export const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -23,7 +23,7 @@ export function headingFromDir(x, z) {
     return Math.atan2(-x, -z);
 }
 
-export function dirFromHeading(h, out = new pc.Vec3()) {
+export function dirFromHeading(h, out = new Vec3()) {
     return out.set(-Math.sin(h), 0, -Math.cos(h));
 }
 

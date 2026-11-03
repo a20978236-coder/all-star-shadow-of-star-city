@@ -1,4 +1,4 @@
-import * as pc from 'playcanvas';
+import { Vec3 } from '../core/math.js';
 import { Enemy } from './Enemy.js';
 import { ENEMY } from '../config.js';
 
@@ -29,7 +29,7 @@ export class EnemyManager {
             const x = g.center.x + Math.cos(a) * r, z = g.center.z + Math.sin(a) * r;
             const y = g.y !== null ? g.y : this.game.physics.heightAt(x, z, g.center.y + 2);
             const variant = i < g.brutes ? 'brute' : 'thug';
-            this.list.push(new Enemy(this.game, variant, new pc.Vec3(x, y + 0.05, z), g.id));
+            this.list.push(new Enemy(this.game, variant, new Vec3(x, y + 0.05, z), g.id));
         }
         g.alerted = false;
     }
@@ -113,7 +113,7 @@ export class EnemyManager {
             const d = Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z);
             if (d < 1.8 && Math.abs(e.pos.y - pos.y) < 1.5) {
                 e.knockdown(dir, Math.min(18, speed * 0.6), speed > 25 ? 3 : 2);
-                this.game.fx.spark(new pc.Vec3(e.pos.x, e.pos.y + 1, e.pos.z), 14, 9);
+                this.game.fx.spark(new Vec3(e.pos.x, e.pos.y + 1, e.pos.z), 14, 9);
                 this.game.camera.shake(0.3);
             }
         }

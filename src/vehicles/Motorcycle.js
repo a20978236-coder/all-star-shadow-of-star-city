@@ -1,10 +1,10 @@
-import * as pc from 'playcanvas';
+import { Vec3 } from '../core/math.js';
 import { BIKE, WORLD, COLORS } from '../config.js';
 import { makeMaterial, neonMaterial } from '../world/Materials.js';
 import { canvasTexture, makeStarCanvas } from '../world/Textures.js';
 import { clamp, damp, dirFromHeading, DEG } from '../core/MathUtils.js';
 
-const tmp = new pc.Vec3();
+const tmp = new Vec3();
 
 /**
  * The Star Cycle: summonable arcade motorcycle with boost, drifting lean,
@@ -13,8 +13,8 @@ const tmp = new pc.Vec3();
 export class Motorcycle {
     constructor(game) {
         this.game = game;
-        this.app = game.app;
-        this.body = { pos: new pc.Vec3(0, -100, 0), vel: new pc.Vec3(), radius: BIKE.radius, height: 1.3, grounded: false };
+        this.gfx = game.gfx;
+        this.body = { pos: new Vec3(0, -100, 0), vel: new Vec3(), radius: BIKE.radius, height: 1.3, grounded: false };
         this.heading = 0;
         this.speed = 0;
         this.steer = 0;
@@ -29,22 +29,21 @@ export class Motorcycle {
     }
 
     _buildModel() {
-        const app = this.app;
+        const g = this.gfx;
         const black = makeMaterial({ name: 'bikeBody', diffuse: [0.02, 0.022, 0.026], gloss: 0.9, metalness: 0.65 });
         const dark = makeMaterial({ name: 'bikeFrame', diffuse: [0.07, 0.075, 0.08], gloss: 0.7, metalness: 0.9 });
         const tire = makeMaterial({ name: 'tire', diffuse: [0.015, 0.015, 0.015], gloss: 0.3 });
         const green = neonMaterial(COLORS.neonGreen, 5);
         const cyan = neonMaterial(COLORS.neonCyan, 6);
         const red = neonMaterial(COLORS.chaosRed, 5);
-        const starTex = canvasTexture(app.graphicsDevice, makeStarCanvas('#b8ff2c', false), { repeat: false, name: 'bikeStar' });
-        const starMat = makeMaterial({ name: 'bikeStar', diffuse: [0, 0, 0], emissiveMap: starTex, emissive: [1, 1, 1], emissiveIntensity: 4, opacityMap: starTex, blend: pc.BLEND_ADDITIVE, twoSided: true });
+        const starTex = canvasTexture(null, makeStarCanvas('#b8ff2c', false), { repeat: false, name: 'bikeStar' });
+        const starMat = makeMaterial({ name: 'bikeStar', diffuse: [0, 0, 0], emissiveMap: starTex, emissive: [1, 1, 1], emissiveIntensity: 4, opacityMap: starTex, blend: 'additive', twoSided: true });
 
-        this.root = new pc.Entity('StarCycle');
-        this.leanPivot = new pc.Entity('lean');
+        this.root = g.node('StarCycle');
+        this.leanPivot = g.node('lean');
         this.root.addChild(this.leanPivot);
-        const part = (type, mat, x, y, z, sx, sy, sz, rx = 0, ry = 0, rz = 0, parent = this.leanPivot) => {
-            const e = new pc.Entity();
-            e.addComponent('render', { type, material: mat, castShadows: true });
+        const part = (type, mat, x, y, z, sx, sy, sz, rx = 0, ry = 0, rz = 0, parent = this.leanPivot, castShadows = true) => {
+            const e = g.mesh(type, mat, { castShadows });
             e.setLocalPosition(x, y, z); e.setLocalScale(sx, sy, sz); e.setLocalEulerAngles(rx, ry, rz);
             parent.addChild(e);
             return e;
@@ -66,16 +65,15 @@ export class Motorcycle {
         part('box', red, 0, 1.0, 1.31, 0.22, 0.05, 0.03);                    // tail light
         part('box', green, 0.215, 0.78, -0.3, 0.01, 0.05, 1.2, -6);          // side stripes
         part('box', green, -0.215, 0.78, -0.3, 0.01, 0.05, 1.2, -6);
-        const s1 = part('plane', starMat, 0.216, 0.78, -0.05, 0.32, 1, 0.32, 0, 0, -90);
-        const s2 = part('plane', starMat, -0.216, 0.78, -0.05, 0.32, 1, 0.32, 0, 0, 90);
-        s1.render.castShadows = s2.render.castShadows = false;
+        part('plane', starMat, 0.216, 0.78, -0.05, 0.32, 1, 0.32, 0, 0, -90, this.leanPivot, false);
+        part('plane', starMat, -0.216, 0.78, -0.05, 0.32, 1, 0.32, 0, 0, 90, this.leanPivot, false);
         // wheels: pivot spins around X, child cylinder lies along X
         const wheel = z => {
-            const pivot = new pc.Entity('wheel');
+            const pivot = g.node('wheel');
             pivot.setLocalPosition(0, 0.36, z);
             this.leanPivot.addChild(pivot);
             part('cylinder', tire, 0, 0, 0, 0.72, 0.22, 0.72, 0, 0, 90, pivot);
-            part('torus', green, 0, 0, 0, 0.62, 0.62, 0.62, 0, 0, 90, pivot).render.castShadows = false;
+            part('torus', green, 0, 0, 0, 0.62, 0.62, 0.62, 0, 0, 90, pivot, false);
             part('box', dark, 0, 0, 0, 0.24, 0.5, 0.05, 0, 0, 0, pivot);       // spoke so the spin is visible
             part('box', dark, 0, 0, 0, 0.24, 0.05, 0.5, 0, 0, 0, pivot);
             return pivot;
@@ -84,15 +82,12 @@ export class Motorcycle {
         this.rearWheel = wheel(1.1);
 
         // headlight
-        this.headlight = new pc.Entity('headlight');
-        this.headlight.addComponent('light', {
-            type: 'spot', color: new pc.Color(0.75, 0.9, 1), intensity: 6, range: 45,
-            innerConeAngle: 18, outerConeAngle: 32, castShadows: false, falloffMode: pc.LIGHTFALLOFF_INVERSESQUARED
-        });
+        // spot lights shine along their local -Y axis (PlayCanvas convention, mirrored by the Three.js backend)
+        this.headlight = g.spotLight({ name: 'headlight', color: [0.75, 0.9, 1], intensity: 6, range: 45, inner: 18, outer: 32, falloff: 'inverse' });
         this.headlight.setLocalPosition(0, 1.0, -1.3);
         this.headlight.setLocalEulerAngles(-82, 0, 0);
         this.leanPivot.addChild(this.headlight);
-        this.app.root.addChild(this.root);
+        g.add(this.root);
     }
 
     get pos() { return this.body.pos; }
@@ -118,7 +113,7 @@ export class Motorcycle {
         this.active = true;
         this.root.enabled = true;
         this.summonFx = 1;
-        this.game.fx.spark(new pc.Vec3(this.body.pos.x, this.body.pos.y + 0.6, this.body.pos.z), 24, 6, 0.12);
+        this.game.fx.spark(new Vec3(this.body.pos.x, this.body.pos.y + 0.6, this.body.pos.z), 24, 6, 0.12);
         this.game.hud.toast('STAR CYCLE ARRIVED');
         return true;
     }
@@ -139,7 +134,7 @@ export class Motorcycle {
         const p = this.rider;
         if (!p) return;
         this.rider = null;
-        const right = new pc.Vec3(Math.cos(this.heading), 0, -Math.sin(this.heading));
+        const right = new Vec3(Math.cos(this.heading), 0, -Math.sin(this.heading));
         if (eject) {
             const f = dirFromHeading(this.heading, tmp);
             p.body.pos.set(this.body.pos.x, this.body.pos.y + 1.6, this.body.pos.z);
@@ -192,7 +187,7 @@ export class Motorcycle {
             const impact = Math.abs(this.speed);
             this.speed *= impact > 18 ? -0.25 : 0.2;
             this.game.camera.shake(Math.min(0.8, impact / 40));
-            this.game.fx.spark(new pc.Vec3(b.pos.x + f.x, b.pos.y + 0.7, b.pos.z + f.z), 12, 6);
+            this.game.fx.spark(new Vec3(b.pos.x + f.x, b.pos.y + 0.7, b.pos.z + f.z), 12, 6);
         }
         if (riding && Math.abs(this.speed) > 7) this.game.enemies.bikeImpact(b.pos, f.clone(), Math.abs(this.speed));
         if (b.pos.y < -5) { b.pos.y = 1; }
@@ -217,7 +212,7 @@ export class Motorcycle {
             else if (input.pressed('interact')) this.dismount(false);
         }
         if (boosting && Math.random() < dt * 30) {
-            this.game.fx.spark(new pc.Vec3(b.pos.x - f.x * 1.4, b.pos.y + 0.6, b.pos.z - f.z * 1.4), 2, 3, 0.07);
+            this.game.fx.spark(new Vec3(b.pos.x - f.x * 1.4, b.pos.y + 0.6, b.pos.z - f.z * 1.4), 2, 3, 0.07);
         }
     }
 }

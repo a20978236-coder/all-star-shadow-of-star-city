@@ -92,9 +92,15 @@ function bottomFace(size) {
     return c;
 }
 
+/** The six cubemap faces (+X, -X, +Y, -Y, +Z, -Z) as canvases - shared by both renderers. */
+export function makeCityEnvFaces(size = 128) {
+    return [sideFace(size, 1), sideFace(size, 2), topFace(size), bottomFace(size), sideFace(size, 3), sideFace(size, 4)];
+}
+
+/** PlayCanvas: build the prefiltered environment atlas and assign it to the scene. */
 export function createCityEnvironment(app, size = 128) {
     const device = app.graphicsDevice;
-    const faces = [sideFace(size, 1), sideFace(size, 2), topFace(size), bottomFace(size), sideFace(size, 3), sideFace(size, 4)];
+    const faces = makeCityEnvFaces(size);
     const cubemap = new pc.Texture(device, {
         name: 'cityEnvCube',
         cubemap: true,

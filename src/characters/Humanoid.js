@@ -1,8 +1,8 @@
-import * as pc from 'playcanvas';
+import { Vec3 } from '../core/math.js';
 import { damp } from '../core/MathUtils.js';
 import { Cape } from './Cape.js';
 
-const ZERO = new pc.Vec3();
+const ZERO = new Vec3();
 
 /**
  * Placeholder humanoid rig built from primitives with procedural animation.
@@ -10,12 +10,13 @@ const ZERO = new pc.Vec3();
  * The model faces -Z.
  */
 export class Humanoid {
-    constructor(app, opts) {
-        this.app = app;
+    /** g = graphics backend (see gfx/gfx.js). */
+    constructor(g, opts) {
+        this.gfx = g;
         this.opts = opts;
         const s = opts.scale || 1;
-        this.root = new pc.Entity(opts.name || 'Humanoid');
-        this.body = new pc.Entity('body');           // tilt/lean pivot at the feet
+        this.root = g.node(opts.name || 'Humanoid');
+        this.body = g.node('body');           // tilt/lean pivot at the feet
         this.root.addChild(this.body);
         this.pelvis = this._pivot(this.body, 0, 0.98 * s, 0);
         this.torso = this._pivot(this.pelvis, 0, 0.05 * s, 0);
@@ -32,7 +33,7 @@ export class Humanoid {
         const M = opts.materials;
         if (opts.build) opts.build(this, s, M);
         else this._buildBlocky(M, s);
-        if (opts.cloth) this.cloth = new Cape(app, this, opts.cloth);
+        if (opts.cloth) this.cloth = new Cape(g, this, opts.cloth);
 
         this.t = 0;
         this.phase = 0;
@@ -85,15 +86,14 @@ export class Humanoid {
     }
 
     _pivot(parent, x, y, z) {
-        const e = new pc.Entity();
+        const e = this.gfx.node('joint');
         e.setLocalPosition(x, y, z);
         parent.addChild(e);
         return e;
     }
 
-    _part(parent, type, material, x, y, z, sx, sy, sz) {
-        const e = new pc.Entity();
-        e.addComponent('render', { type, material, castShadows: true, receiveShadows: true });
+    _part(parent, type, material, x, y, z, sx, sy, sz, castShadows = true) {
+        const e = this.gfx.mesh(type, material, { castShadows, receiveShadows: true });
         e.setLocalPosition(x, y, z);
         e.setLocalScale(sx, sy, sz);
         parent.addChild(e);

@@ -12,7 +12,7 @@ const inv = new pc.Mat4();
  * Verlet cloth cape pinned to the hero's shoulders. Reacts to running, wind
  * from motion, gravity and the body (sphere collisions), spreads into a wing
  * while gliding, and has a pointed scalloped hem. Two layers: black shell +
- * electric-blue lining.
+ * lime-green lining.
  */
 export class Cape {
     constructor(app, rig, { outer, inner, trim }) {
@@ -116,19 +116,24 @@ export class Cape {
         const gravity = -11 * dt * dt;
         // apparent wind from the hero's motion + gusts
         const gust = Math.sin(this.time * 2.3) * 0.6 + Math.sin(this.time * 5.1) * 0.3;
-        this.wind.set(-velocity.x * 0.9 + gust * 0.4, -velocity.y * 0.35, -velocity.z * 0.9 + gust * 0.25);
-        const damping = 0.965;
-        const windK = 0.42 * dt * dt;
+        this.wind.set(-velocity.x + gust * 0.5, -velocity.y * 0.5, -velocity.z + gust * 0.3);
+        const damping = 0.97;
+        const windK = 0.85 * dt * dt;
         const gliding = state === 'glide';
+        // damping acts on motion relative to the hero, so running doesn't behave like a hurricane;
+        // the apparent wind term provides a controlled air drag instead
+        const cvx = velocity.x * dt, cvy = velocity.y * dt, cvz = velocity.z * dt;
+        const cv = [cvx, cvy, cvz];
 
         // integrate
         for (let r = 1; r < H; r++) for (let c = 0; c < W; c++) {
             const k = (r * W + c) * 3;
             const flutter = Math.sin(this.time * 11 + r * 0.9 + c * 1.3) * Math.min(1, velocity.length() / 12) * 0.5;
+            const wk = windK * (0.4 + 0.6 * r / H);
             for (let a = 0; a < 3; a++) {
-                const v = (P[k + a] - Q[k + a]) * damping;
+                const v = cv[a] + (P[k + a] - Q[k + a] - cv[a]) * damping;
                 Q[k + a] = P[k + a];
-                let acc = this.wind[['x', 'y', 'z'][a]] * windK * (r / H);
+                let acc = this.wind[['x', 'y', 'z'][a]] * wk;
                 if (a === 1) acc += gravity + flutter * dt * dt * 3;
                 P[k + a] += v + acc;
             }

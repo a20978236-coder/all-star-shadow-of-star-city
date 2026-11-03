@@ -127,9 +127,9 @@ resolution, rain density, light count and disables shadows for performance.
 * **Cinematic camera** — ACES tone mapping, bloom, vignette, ambient occlusion and depth of field (High),
   multi-ray camera collision.
 * **All-Star** — sculpted body (`src/characters/Characters.js` + `ShapeBuilder.js`): face with brown eyes,
-  catchlights, brows, nose and lips; thick curly black hair; black hex-armour suit with electric-blue lines,
-  neon-green star emblem and buckle, finned gauntlets, knee guards, boots; a **verlet cloth cape**
-  (`Cape.js`) with a blue lining that trails in the wind and spreads into a wing while gliding.
+  catchlights, brows, nose and lips; short thick curly black hair; black hex-armour suit with neon-lime panels, cyan light lines,
+  graffiti-style lime star emblem and buckle, finned gauntlets, knee guards, boots; a **verlet cloth cape**
+  (`Cape.js`) with a lime lining, lime piping and a star on the back, that trails in the wind and spreads into a wing while gliding.
   Animations: idle (weight shift, look-around), walk, run, sprint, jump tuck, landing crouch, plus all
   combat/traversal poses.
 * **Quality presets** — Low / Medium / High (pause menu → GRAPHICS). PC defaults to High, iPhone to Medium.

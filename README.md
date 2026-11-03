@@ -39,6 +39,13 @@ npm run preview
 `npm run build` writes a static site to `dist/`. Because `vite.config.js` uses `base: './'`, you can upload
 `dist/` to any static host (GitHub Pages, Netlify, Vercel, S3, itch.io…).
 
+### Deploying to GitHub Pages
+
+`.github/workflows/deploy-pages.yml` builds the game and publishes `dist/` to GitHub Pages on every push
+to `main` (or manually from the **Actions** tab → *Deploy to GitHub Pages* → *Run workflow*).
+In **Settings → Pages**, set **Source** to **GitHub Actions** if it is not already. The game is then served at
+`https://<user>.github.io/<repo>/`.
+
 ### Playing on an iPhone
 
 1. Make sure your computer and iPhone are on the same Wi-Fi network.

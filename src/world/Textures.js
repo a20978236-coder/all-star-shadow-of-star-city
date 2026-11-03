@@ -449,3 +449,57 @@ export function makeSuitMaps(size = 256) {
     }
     return { diffuse: d, normal: heightToNormalCanvas(h, 2.2) };
 }
+
+/** Hand-painted "graffiti" star with paint splatter, as on All-Star's chest and cape. */
+export function makeGraffitiStarCanvas(color = '#b8ff2c', size = 256, seed = 3) {
+    const rng = new Rng(seed);
+    const c = makeCanvas(size, size), g = c.getContext('2d');
+    const k = size / 256;
+    const pts = [];
+    for (let i = 0; i < 10; i++) {
+        const a = -Math.PI / 2 + i * Math.PI / 5;
+        const r = (i % 2 === 0 ? 108 : 44) * k;
+        pts.push([128 * k + Math.cos(a) * r, 134 * k + Math.sin(a) * r]);
+    }
+    g.lineJoin = 'miter';
+    g.strokeStyle = color;
+    // rough brush: several jittered strokes
+    for (let pass = 0; pass < 4; pass++) {
+        g.lineWidth = (13 - pass * 2.5) * k;
+        g.globalAlpha = pass === 0 ? 1 : 0.6;
+        g.beginPath();
+        pts.forEach((p, i) => {
+            const x = p[0] + rng.range(-2.5, 2.5) * k, y = p[1] + rng.range(-2.5, 2.5) * k;
+            if (i) g.lineTo(x, y); else g.moveTo(x, y);
+        });
+        g.closePath(); g.stroke();
+    }
+    g.globalAlpha = 1;
+    g.fillStyle = color;
+    for (let i = 0; i < 70; i++) {
+        const a = rng.range(0, Math.PI * 2), d = rng.range(30, 125) * k;
+        g.beginPath(); g.arc(128 * k + Math.cos(a) * d, 134 * k + Math.sin(a) * d, rng.range(0.6, 3.2) * k, 0, Math.PI * 2); g.fill();
+    }
+    return c;
+}
+
+/** Cape outer layer: black fabric with lime edge piping and the star on the back. Returns {diffuse, emissive}. */
+export function makeCapeCanvases(color = '#b8ff2c') {
+    const w = 256, h = 512;
+    const d = makeCanvas(w, h), e = makeCanvas(w, h);
+    const dc = d.getContext('2d'), ec = e.getContext('2d');
+    dc.fillStyle = '#060708'; dc.fillRect(0, 0, w, h);
+    ec.fillStyle = '#000'; ec.fillRect(0, 0, w, h);
+    const rng = new Rng(17);
+    for (let i = 0; i < 900; i++) {                       // subtle fabric weave / wet sheen
+        dc.fillStyle = `rgba(255,255,255,${rng.range(0, 0.03)})`;
+        dc.fillRect(rng.range(0, w), rng.range(0, h), rng.range(1, 3), rng.range(4, 20));
+    }
+    for (const ctx of [dc, ec]) {
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, 7, h); ctx.fillRect(w - 7, 0, 7, h);      // side piping
+        ctx.fillRect(0, h - 10, w, 10);                               // hem piping
+        ctx.drawImage(makeGraffitiStarCanvas(color, 256, 9), w * 0.5 - 70, h * 0.1, 140, 140);
+    }
+    return { diffuse: d, emissive: e };
+}

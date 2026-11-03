@@ -47,21 +47,43 @@ export class ThirdPersonCamera {
             if (!pc.CameraFrame) throw new Error('CameraFrame unavailable');
             const cf = new pc.CameraFrame(this.app, cam);
             cf.rendering.toneMapping = pc.TONEMAP_ACES;
-            cf.rendering.samples = IS_MOBILE ? 1 : 2;
-            cf.bloom.intensity = QUALITY.bloom ? 0.035 : 0;
             cf.bloom.blurLevel = IS_MOBILE ? 10 : 16;
-            cf.vignette.intensity = 0.4;
             cf.vignette.inner = 0.55;
             cf.vignette.outer = 1.2;
             cf.vignette.curvature = 0.5;
             // Note: colour grading is left off - its contrast curve crushes the night-time shadows.
-            cf.update();
             this.cameraFrame = cf;
+            this.applyQuality(QUALITY);
         } catch (err) {
             console.warn('[camera] post-processing disabled:', err);
             cam.toneMapping = pc.TONEMAP_ACES;
             cam.gammaCorrection = pc.GAMMA_SRGB;
         }
+    }
+
+    /** Apply a graphics preset to the post-processing chain (can be called at runtime). */
+    applyQuality(q) {
+        const cf = this.cameraFrame;
+        if (!cf) return;
+        cf.rendering.samples = q.msaa || 1;
+        cf.bloom.intensity = q.bloom ? 0.04 : 0;
+        cf.vignette.intensity = 0.42;
+        // ambient occlusion grounds characters and props (desktop "high")
+        cf.ssao.type = q.ssao ? pc.SSAOTYPE_LIGHTING : pc.SSAOTYPE_NONE;
+        cf.ssao.intensity = 0.55;
+        cf.ssao.radius = 22;
+        cf.ssao.samples = 10;
+        cf.ssao.scale = 0.5;
+        // cinematic depth of field: the hero stays sharp, the far skyline softens
+        cf.dof.enabled = !!q.dof;
+        cf.dof.nearBlur = false;
+        cf.dof.highQuality = false;
+        cf.dof.focusRange = 40;
+        cf.dof.blurRadius = 1.2;
+        cf.dof.focusDistance = 6;
+        cf.rendering.sceneDepthMap = !!(q.ssao || q.dof);
+        cf.fringing.intensity = 0;
+        cf.update();
     }
 
     shake(amount) { this.trauma = Math.min(1, this.trauma + amount); }
@@ -103,9 +125,14 @@ export class ThirdPersonCamera {
         q.transformVector(offset, offset);
         const want = offset.length();
         const dir = offset.clone().mulScalar(1 / want);
-        const hit = this.physics.raycast(this.pivot, dir, want + 0.4, true);
         let dist = want;
-        if (hit) dist = Math.max(0.5, hit.dist - 0.4);
+        const right = new pc.Vec3(Math.cos(this.yaw * RAD), 0, -Math.sin(this.yaw * RAD));
+        for (const [ox, oy] of [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.25], [0, -0.25]]) {
+            const o = this.pivot.clone().add(right.clone().mulScalar(ox));
+            o.y += oy;
+            const hit = this.physics.raycast(o, dir, want + 0.4, true);
+            if (hit) dist = Math.min(dist, Math.max(0.5, hit.dist - 0.4));
+        }
         this.curDist = dist < this.curDist ? dist : damp(this.curDist, dist, 5, dt);
 
         const pos = this.pivot.clone().add(dir.mulScalar(this.curDist));
@@ -117,6 +144,14 @@ export class ThirdPersonCamera {
         const t = performance.now() * 0.001;
         const sx = (Math.sin(t * 47) + Math.sin(t * 31)) * 0.5 * s * 0.35;
         const sy = (Math.sin(t * 53) + Math.sin(t * 23)) * 0.5 * s * 0.35;
+        if (this.cameraFrame && this.cameraFrame.dof.enabled) {
+            const fd = this.curDist + 0.5;
+            if (Math.abs(fd - this.cameraFrame.dof.focusDistance) > 0.25) {
+                this.cameraFrame.dof.focusDistance = fd;
+                this.cameraFrame.dof.focusRange = 40 + target.speed * 0.8;
+                this.cameraFrame.update();
+            }
+        }
         this.entity.setPosition(pos.x, pos.y + sy, pos.z);
         this.entity.setEulerAngles(this.pitch + sy * 8, this.yaw + sx * 8, sx * 6);
     }

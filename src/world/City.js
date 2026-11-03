@@ -4,7 +4,7 @@ import { BatchSet } from './GeometryBatch.js';
 import { makeMaterial, neonMaterial } from './Materials.js';
 import {
     canvasTexture, makeFacadeCanvases, FACADE_STYLES, makeRoadCanvas, makeConcreteCanvas,
-    makeStarCanvas, makeSignCanvas
+    makeStarCanvas, makeSignCanvas, makeRoadMaps, makeSidewalkMaps, makeStorefrontCanvases, makeDotCanvas
 } from './Textures.js';
 import { COLORS, QUALITY } from '../config.js';
 
@@ -65,6 +65,9 @@ export class City {
         this.root = new pc.Entity('City');
         app.root.addChild(this.root);
         this.rng = new Rng(20261103);
+        this.detailRng = new Rng(777);       // separate stream: added details never shift the original layout
+        this.steamVents = [];
+        this.signalMats = null;
         this.batches = new BatchSet();
         this.materials = {};
         this.roofs = [];             // walkable rooftops for collectibles / spawns
@@ -100,23 +103,58 @@ export class City {
         const dev = this.app.graphicsDevice;
         const M = this.materials;
         let seed = 100;
+        const facadeSize = QUALITY.facadeDetail && QUALITY.name === 'high' ? 1024 : 512;
+        const lin = (canvas, name) => canvasTexture(dev, canvas, { name, srgb: false });
         for (const [key, style] of Object.entries(FACADE_STYLES)) {
-            const { diffuse, emissive } = makeFacadeCanvases(style, seed++);
-            M[`facade_${key}`] = makeMaterial({
+            const { diffuse, emissive, normal } = makeFacadeCanvases(style, seed++, facadeSize);
+            const m = makeMaterial({
                 name: `facade_${key}`,
                 diffuse: [1, 1, 1],
                 diffuseMap: canvasTexture(dev, diffuse, { name: `facade_${key}_d` }),
                 emissiveMap: canvasTexture(dev, emissive, { name: `facade_${key}_e` }),
-                emissiveIntensity: 0.85,
-                gloss: key === 'glass' ? 0.82 : 0.35,
-                metalness: key === 'glass' ? 0.5 : 0.05
+                emissiveIntensity: 0.9,
+                gloss: key === 'glass' ? 0.86 : 0.42,
+                metalness: key === 'glass' ? 0.55 : 0.05
             });
+            m.normalMap = lin(normal, `facade_${key}_n`);
+            m.bumpiness = 0.7;
+            m.update();
+            M[`facade_${key}`] = m;
         }
-        const roadTex = canvasTexture(dev, makeRoadCanvas(), { name: 'road' });
-        M.road = makeMaterial({ name: 'road', diffuse: [1, 1, 1], diffuseMap: roadTex, tiling: [12, 12], gloss: 0.78, metalness: 0.15 });
-        const concTex = canvasTexture(dev, makeConcreteCanvas('#4a4b52', 3), { name: 'concrete' });
-        M.sidewalk = makeMaterial({ name: 'sidewalk', diffuse: [1, 1, 1], diffuseMap: concTex, gloss: 0.62 });
-        M.roof = makeMaterial({ name: 'roof', diffuse: [1, 1, 1], diffuseMap: canvasTexture(dev, makeConcreteCanvas('#2b2c31', 9), { name: 'roof' }), gloss: 0.55 });
+        // Wet asphalt with mirror-like puddles (gloss map) and aggregate/cracks (normal map)
+        const road = makeRoadMaps(QUALITY.name === 'low' ? 512 : 1024);
+        M.road = makeMaterial({ name: 'road', diffuse: [1, 1, 1], diffuseMap: canvasTexture(dev, road.diffuse, { name: 'road' }), tiling: [12, 12], gloss: 0.95, metalness: 0.12 });
+        M.road.glossMap = lin(road.gloss, 'road_g');
+        M.road.glossMapTiling = new pc.Vec2(12, 12);
+        M.road.normalMap = lin(road.normal, 'road_n');
+        M.road.normalMapTiling = new pc.Vec2(12, 12);
+        M.road.bumpiness = 0.45;
+        M.road.update();
+        const walk = makeSidewalkMaps(512);
+        M.sidewalk = makeMaterial({ name: 'sidewalk', diffuse: [1, 1, 1], diffuseMap: canvasTexture(dev, walk.diffuse, { name: 'sidewalk' }), gloss: 0.85, metalness: 0.05 });
+        M.sidewalk.glossMap = lin(walk.gloss, 'sidewalk_g');
+        M.sidewalk.normalMap = lin(walk.normal, 'sidewalk_n');
+        M.sidewalk.bumpiness = 0.6;
+        M.sidewalk.update();
+        M.roof = makeMaterial({ name: 'roof', diffuse: [1, 1, 1], diffuseMap: canvasTexture(dev, makeConcreteCanvas('#2b2c31', 9), { name: 'roof' }), gloss: 0.72, metalness: 0.05 });
+        M.roof.glossMap = M.sidewalk.glossMap;
+        M.roof.normalMap = M.sidewalk.normalMap;
+        M.roof.bumpiness = 0.4;
+        M.roof.update();
+        M.curb = makeMaterial({ name: 'curb', diffuse: [0.36, 0.36, 0.38], gloss: 0.7 });
+        const shops = makeStorefrontCanvases(13);
+        M.storefront = makeMaterial({
+            name: 'storefront', diffuse: [1, 1, 1],
+            diffuseMap: canvasTexture(dev, shops.diffuse, { name: 'shop_d' }),
+            emissiveMap: canvasTexture(dev, shops.emissive, { name: 'shop_e' }),
+            emissiveIntensity: 0.75, gloss: 0.8, metalness: 0.3
+        });
+        M.hydrant = makeMaterial({ name: 'hydrant', diffuse: [0.55, 0.05, 0.04], gloss: 0.6, metalness: 0.3 });
+        M.bin = makeMaterial({ name: 'bin', diffuse: [0.05, 0.12, 0.08], gloss: 0.5, metalness: 0.4 });
+        M.signalRed = neonMaterial([1, 0.1, 0.05], 5);
+        M.signalGreen = neonMaterial([0.2, 1, 0.45], 0.2);
+        M.signalAmber = neonMaterial([1, 0.6, 0.05], 0.2);
+        this.signalMats = [M.signalRed, M.signalAmber, M.signalGreen];
         M.metal = makeMaterial({ name: 'metal', diffuse: [0.09, 0.1, 0.12], gloss: 0.6, metalness: 0.8 });
         M.trim = makeMaterial({ name: 'trim', diffuse: [0.16, 0.17, 0.2], gloss: 0.5, metalness: 0.3 });
         M.grass = makeMaterial({ name: 'grass', diffuse: [0.05, 0.12, 0.06], gloss: 0.3 });
@@ -150,6 +188,8 @@ export class City {
             for (let j = 0; j < GRID; j++) this._buildBlock(i, j);
         }
         this._buildStreetFurniture();
+        this._buildCurbs();
+        if (QUALITY.streetProps) this._buildStreetProps();
         this._buildWaterfront();
         this._flush();
         this._buildLightPool();
@@ -236,6 +276,7 @@ export class City {
         this._box(mat, x0, 0, z0, x1, h, z1, uv, true, 'building');
         this._roof(x0, z0, x1, z1, h, dkey);
         this.footprints.push({ x0, z0, x1, z1, color: d.color, kind: 'building', h });
+        if (QUALITY.facadeDetail) this._facadeDetail(x0, z0, x1, z1, h, styleKey, dkey);
 
         let topH = h;
         const w = x1 - x0, dd = z1 - z0;
@@ -262,6 +303,54 @@ export class City {
             for (let k = 0; k < n; k++) this._facadeSign(x0, z0, x1, z1, Math.min(h, 40), rng.pick(colors));
         }
         if (h < 60 && rng.chance(dkey === 'entertainment' ? 0.4 : 0.12)) this._roofBillboard(x0, z0, x1, z1, h);
+    }
+
+    /** Ledges, pilasters, cornices and street-level shop fronts (visual only). */
+    _facadeDetail(x0, z0, x1, z1, h, styleKey, dkey) {
+        const r = this.detailRng;
+        const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+        const ring = (mat, y0, y1, out) => {
+            const b = this._b(mat, cx, cz);
+            b.addBox(x0 - out, y0, z0 - out, x1 + out, y1, z0, { bottom: true });
+            b.addBox(x0 - out, y0, z1, x1 + out, y1, z1 + out, { bottom: true });
+            b.addBox(x0 - out, y0, z0, x0, y1, z1, { bottom: true });
+            b.addBox(x1, y0, z0, x1 + out, y1, z1, { bottom: true });
+        };
+        if (styleKey === 'glass') {
+            // slim corner pilasters + a crown
+            const t = 0.45;
+            for (const [x, z] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) this._b('trim', x, z).addBox(x - t, 0, z - t, x + t, h + 0.6, z + t);
+            if (h > 60) ring('trim', h - 1.2, h + 0.2, 0.35);
+        } else {
+            const every = styleKey === 'brick' ? 3.6 * 3 : 3.6 * 4;
+            for (let y = every; y < h - 2; y += every) ring('trim', y - 0.25, y + 0.15, 0.22);
+            ring('trim', h - 0.9, h + 0.1, 0.4);                      // cornice
+        }
+        // shop fronts on busy districts
+        const shopDistricts = ['downtown', 'entertainment', 'oldcity', 'university', 'westend', 'northridge', 'chaos'];
+        if (shopDistricts.includes(dkey) && r.chance(0.75)) {
+            const sh = 4.4, o = 0.08;
+            const b = this._b('storefront', cx, cz);
+            // one quad per ~7 m shop, each picking one of the 4 shop designs in the texture
+            const side = (ax0, ax1, fixed, normal, alongX) => {
+                const len = ax1 - ax0 - 1.2;
+                const n = Math.max(1, Math.round(len / 7));
+                const w = len / n;
+                for (let k = 0; k < n; k++) {
+                    const c = ax0 + 0.6 + w * (k + 0.5);
+                    const shop = r.int(0, 3);
+                    if (alongX) b.addQuad(c, 0.2 + sh / 2, fixed, w - 0.1, sh, normal, shop / 4, (shop + 1) / 4);
+                    else b.addQuad(fixed, 0.2 + sh / 2, c, w - 0.1, sh, normal, shop / 4, (shop + 1) / 4);
+                }
+            };
+            side(x0, x1, z0 - o, [0, 0, -1], true);
+            side(x0, x1, z1 + o, [0, 0, 1], true);
+            side(z0, z1, x0 - o, [-1, 0, 0], false);
+            side(z0, z1, x1 + o, [1, 0, 0], false);
+            // awning ledge above the shops
+            ring('metal', sh, sh + 0.25, 1.1);
+            this.lightCandidates.push({ x: cx + (x1 - x0) * 0.5 + 2, y: 3, z: cz, color: [1, 0.8, 0.6], range: 12, intensity: 1.6 });
+        }
     }
 
     _roof(x0, z0, x1, z1, h, dkey) {
@@ -504,6 +593,94 @@ export class City {
         }
     }
 
+    _buildCurbs() {
+        for (let i = 0; i < GRID; i++) for (let j = 0; j < GRID; j++) {
+            const [cx, cz] = this.blockCenter(i, j);
+            const e = HALF_BLOCK, t = 0.35, y = 0.24;
+            const b = this._b('curb', cx, cz);
+            b.addBox(cx - e - 0.05, 0, cz - e - 0.05, cx + e + 0.05, y, cz - e + t, { bottom: false });
+            b.addBox(cx - e - 0.05, 0, cz + e - t, cx + e + 0.05, y, cz + e + 0.05, { bottom: false });
+            b.addBox(cx - e - 0.05, 0, cz - e + t, cx - e + t, y, cz + e - t, { bottom: false });
+            b.addBox(cx + e - t, 0, cz - e + t, cx + e + 0.05, y, cz + e - t, { bottom: false });
+        }
+    }
+
+    /** Traffic signals, hydrants, bins, benches and steam vents. */
+    _buildStreetProps() {
+        const r = this.detailRng;
+        // traffic signals at interior intersections (two diagonal corners each)
+        for (let a = 1; a < GRID; a++) for (let b = 1; b < GRID; b++) {
+            const rx = ORIGIN + a * PITCH, rz = ORIGIN + b * PITCH;
+            for (const s of [1, -1]) {
+                const px = rx + s * 9, pz = rz + s * 9;
+                this._b('metal', px, pz).addCylinder(px, 0.2, pz, 0.14, 0.12, 6.2, 6, false);
+                const ax = px - s * 4.5;
+                this._b('metal', px, pz).addBox(Math.min(px, ax), 6.0, pz - 0.08, Math.max(px, ax), 6.18, pz + 0.08);
+                this._b('trim', ax, pz).addBox(ax - 0.22, 5.0, pz - 0.2, ax + 0.22, 6.0, pz + 0.2);
+                const lamps = [['signalRed', 5.78], ['signalAmber', 5.5], ['signalGreen', 5.22]];
+                for (const [m, y] of lamps) {
+                    this._b(m, ax, pz).addBox(ax - 0.1, y - 0.1, pz - 0.23, ax + 0.1, y + 0.1, pz - 0.2);
+                    this._b(m, ax, pz).addBox(ax - 0.1, y - 0.1, pz + 0.2, ax + 0.1, y + 0.1, pz + 0.23);
+                }
+                this.physics.addBox(px - 0.16, 0.2, pz - 0.16, px + 0.16, 6.2, pz + 0.16, 'lamp');
+            }
+        }
+        for (let i = 0; i < GRID; i++) for (let j = 0; j < GRID; j++) {
+            const dkey = districtKeyFor(i, j);
+            if (dkey === 'park' || dkey === 'techcore' || dkey === 'harborPlaza') continue;
+            const [cx, cz] = this.blockCenter(i, j);
+            const e = HALF_BLOCK - 1.2;
+            const edgeSpot = () => {
+                const side = r.int(0, 3), t = r.range(-24, 24);
+                return side === 0 ? [cx + t, cz - e] : side === 1 ? [cx + t, cz + e] : side === 2 ? [cx - e, cz + t] : [cx + e, cz + t];
+            };
+            // fire hydrant
+            const [hx, hz] = edgeSpot();
+            this._b('hydrant', hx, hz).addCylinder(hx, 0.2, hz, 0.17, 0.15, 0.6, 8);
+            this._b('hydrant', hx, hz).addCylinder(hx, 0.8, hz, 0.15, 0.05, 0.14, 8);
+            this._b('hydrant', hx, hz).addBox(hx - 0.25, 0.5, hz - 0.06, hx + 0.25, 0.62, hz + 0.06);
+            // trash bins
+            for (let k = 0; k < 2; k++) {
+                const [bx, bz] = edgeSpot();
+                this._b('bin', bx, bz).addCylinder(bx, 0.2, bz, 0.3, 0.34, 0.95, 8);
+                this.physics.addBox(bx - 0.3, 0.2, bz - 0.3, bx + 0.3, 1.15, bz + 0.3, 'prop');
+            }
+            // bench
+            if (r.chance(0.5)) {
+                const [bx, bz] = edgeSpot();
+                const alongX = Math.abs(bz - cz) > Math.abs(bx - cx);
+                const hw = 0.9, hd = 0.25;
+                const [ex, ez] = alongX ? [hw, hd] : [hd, hw];
+                this._b('trunk', bx, bz).addBox(bx - ex, 0.62, bz - ez, bx + ex, 0.7, bz + ez);
+                this._b('metal', bx, bz).addBox(bx - ex, 0.2, bz - ez, bx - ex + 0.08, 0.62, bz + ez);
+                this._b('metal', bx, bz).addBox(bx + ex - 0.08, 0.2, bz - ez, bx + ex, 0.62, bz + ez);
+            }
+        }
+        // steam rising from street vents (downtown / old city)
+        if (QUALITY.name !== 'low') {
+            const dot = canvasTexture(this.app.graphicsDevice, makeDotCanvas(), { repeat: false, name: 'steamDot' });
+            const spots = [[0, 60], [80, -20], [-80, -100], [0, -140], [-160, 280], [160, 300], [-240, 220], [80, 140]];
+            for (const [x, z] of spots) {
+                const e = new pc.Entity('steam');
+                e.addComponent('particlesystem', {
+                    numParticles: 28, lifetime: 4.5, rate: 0.16, rate2: 0.22,
+                    emitterShape: pc.EMITTERSHAPE_SPHERE, emitterRadius: 0.5,
+                    velocityGraph: new pc.CurveSet([[0, 0.2], [0, 1.4], [0, 0.1]]),
+                    velocityGraph2: new pc.CurveSet([[0, -0.2], [0, 0.9], [0, -0.1]]),
+                    scaleGraph: new pc.Curve([0, 0.8, 1, 4.5]),
+                    alphaGraph: new pc.Curve([0, 0, 0.15, 0.16, 1, 0]),
+                    colorGraph: new pc.CurveSet([[0, 0.75], [0, 0.78], [0, 0.85]]),
+                    colorMap: dot, blendType: pc.BLEND_NORMAL, depthWrite: false, lighting: false,
+                    loop: true, autoPlay: true, preWarm: true
+                });
+                e.setPosition(x, 0.1, z);
+                this.root.addChild(e);
+                this.steamVents.push(e);
+                this._b('metal', x, z).addBox(x - 0.6, 0.0, z - 0.6, x + 0.6, 0.03, z + 0.6);
+            }
+        }
+    }
+
     _car(x, z, alongX, rng) {
         const L = 4.4, W = 1.9;
         const hx = alongX ? L / 2 : W / 2, hz = alongX ? W / 2 : L / 2;
@@ -546,7 +723,7 @@ export class City {
     _flush() {
         for (const [key, batch] of this.batches.map) {
             const mat = key.split('|')[1];
-            const isNeon = mat.startsWith('neon') || mat === 'beacon' || mat === 'lampHead' || mat.startsWith('sign') || mat === 'starSign';
+            const isNeon = mat.startsWith('neon') || mat.startsWith('signal') || mat === 'beacon' || mat === 'lampHead' || mat.startsWith('sign') || mat === 'starSign';
             batch.build(this.app, this.materials[mat], this.root, key, { castShadows: !isNeon && mat !== 'roof', receiveShadows: !isNeon });
         }
         this.batches = null;
@@ -616,6 +793,14 @@ export class City {
         const blink = (Math.sin(this.time * 3) > 0.6) ? 7 : 0.4;
         if (this.materials.beacon.emissiveIntensity !== blink) { this.materials.beacon.emissiveIntensity = blink; this.materials.beacon.update(); }
 
+        if (this.signalMats) {
+            const t = this.time % 14;
+            const phase = t < 6 ? 0 : t < 7.5 ? 1 : t < 13 ? 2 : 1;      // red, amber, green, amber
+            if (phase !== this._signalPhase) {
+                this._signalPhase = phase;
+                this.signalMats.forEach((m, k) => { m.emissiveIntensity = k === phase ? 5 : 0.15; m.update(); });
+            }
+        }
         for (const d of this.drones) {
             const a = this.time * d.speed + d.phase;
             d.e.setPosition(d.cx + Math.cos(a) * d.r, d.h + Math.sin(this.time * 0.7 + d.phase) * 4, d.cz + Math.sin(a) * d.r);

@@ -88,7 +88,7 @@ export class GeometryBatch {
     }
 
     /** Flat rectangle with full 0..1 UVs (signs, decals). `axis` is the facing normal. */
-    addQuad(cx, cy, cz, w, h, normal) {
+    addQuad(cx, cy, cz, w, h, normal, u0 = 0, u1 = 1) {
         const [nx, , nz] = normal;
         // right vector perpendicular to normal on XZ plane
         const rx = -nz, rz = nx;
@@ -98,7 +98,8 @@ export class GeometryBatch {
         const c = [cx + rx * hw, cy + hh, cz + rz * hw];
         const d = [cx - rx * hw, cy + hh, cz - rz * hw];
         // UV so the texture reads correctly when viewed from the front
-        this._quad(a, b, c, d, normal, [1, 0], [0, 0], [0, 1], [1, 1]);
+        // canvas textures have v = 0 at the top of the image
+        this._quad(a, b, c, d, normal, [u1, 1], [u0, 1], [u0, 0], [u1, 0]);
     }
 
     /** Horizontal quad (ground decals, water). */

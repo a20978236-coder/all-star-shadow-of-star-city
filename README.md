@@ -114,6 +114,26 @@ resolution, rain density, light count and disables shadows for performance.
 
 ---
 
+## Graphics & character upgrade
+
+* **Image-based lighting** — a procedural night-city environment map (`src/world/EnvMap.js`) gives wet
+  streets, mirror-like puddles, glass towers and the suit real reflections of neon and lit windows.
+* **Materials** — normal maps on facades (recessed windows, ledges, bricks), wet asphalt with aggregate,
+  cracks, manholes and puddle gloss maps, paving-slab sidewalks, hex-armour suit texture.
+* **City detail** — window interiors (curtains, blinds, silhouettes, office light strips), cornices and
+  ledges, glass-tower pilasters, glowing street-level shop fronts with signs and awnings, curbs, traffic
+  signals that cycle, hydrants, bins, benches and steam vents.
+* **Atmosphere** — dense rain plus ground splashes, distant lightning flashes, fog, moonlight shadows.
+* **Cinematic camera** — ACES tone mapping, bloom, vignette, ambient occlusion and depth of field (High),
+  multi-ray camera collision.
+* **All-Star** — sculpted body (`src/characters/Characters.js` + `ShapeBuilder.js`): face with brown eyes,
+  catchlights, brows, nose and lips; thick curly black hair; black hex-armour suit with electric-blue lines,
+  neon-green star emblem and buckle, finned gauntlets, knee guards, boots; a **verlet cloth cape**
+  (`Cape.js`) with a blue lining that trails in the wind and spreads into a wing while gliding.
+  Animations: idle (weight shift, look-around), walk, run, sprint, jump tuck, landing crouch, plus all
+  combat/traversal poses.
+* **Quality presets** — Low / Medium / High (pause menu → GRAPHICS). PC defaults to High, iPhone to Medium.
+
 ## Project structure
 
 ```
@@ -134,10 +154,13 @@ src/
     Environment.js         Moonlight, fog, sky dome, moon, rain
     GeometryBatch.js       Merges static geometry into a few meshes
     Materials.js           Material helpers (lit, neon/emissive)
-    Textures.js            Canvas-generated placeholder textures (facades, roads, signs, sky, star)
+    Textures.js            Canvas-generated textures + normal/gloss maps (facades, roads, sidewalks, shops, suit)
+    EnvMap.js              Procedural night-city environment map for reflections
   characters/
     Humanoid.js            Primitive-based rig with procedural animation
-    Characters.js          All-Star and Chaos Empire model factories
+    Characters.js          All-Star (sculpted hero) and Chaos Empire model factories
+    ShapeBuilder.js        Merges ellipsoids / tapered limbs / boxes into single meshes
+    Cape.js                Verlet cloth cape simulation
   player/
     Player.js              Character controller & state machine
     GrappleSystem.js       Grapple zip + web-swing

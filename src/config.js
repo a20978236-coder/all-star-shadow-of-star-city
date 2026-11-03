@@ -7,15 +7,46 @@ export const IS_TOUCH = (typeof window !== 'undefined') &&
 export const IS_MOBILE = IS_TOUCH && /iPhone|iPad|iPod|Android|Mobile/i.test(navigator.userAgent || '') ||
     (IS_TOUCH && Math.min(window.screen.width, window.screen.height) < 900);
 
-export const QUALITY = {
-    pixelRatio: IS_MOBILE ? 1.5 : Math.min(window.devicePixelRatio || 1, 2),
-    shadows: !IS_MOBILE,
-    shadowResolution: IS_MOBILE ? 1024 : 2048,
-    bloom: true,
-    rainParticles: IS_MOBILE ? 1400 : 4000,
-    maxStreetLights: IS_MOBILE ? 14 : 48,
-    drawDistance: IS_MOBILE ? 650 : 900
+/**
+ * Graphics presets. PC defaults to "high", iPhone/touch devices to "medium".
+ * The player can switch in the pause menu (stored in localStorage).
+ */
+export const QUALITY_PRESETS = {
+    low: {
+        label: 'Low', pixelRatio: 1, shadows: false, shadowResolution: 1024, shadowCascades: 1,
+        bloom: true, ssao: false, dof: false, volumetricFog: false, msaa: 1,
+        rainParticles: 1100, splashParticles: 120, maxStreetLights: 10, envMapSize: 64,
+        streetProps: false, facadeDetail: false, drawDistance: 600
+    },
+    medium: {
+        label: 'Medium', pixelRatio: 1.5, shadows: true, shadowResolution: 1024, shadowCascades: 1,
+        bloom: true, ssao: false, dof: false, volumetricFog: false, msaa: 1,
+        rainParticles: 2000, splashParticles: 220, maxStreetLights: 18, envMapSize: 128,
+        streetProps: true, facadeDetail: true, drawDistance: 750
+    },
+    high: {
+        label: 'High', pixelRatio: Math.min(window.devicePixelRatio || 1, 2), shadows: true, shadowResolution: 2048, shadowCascades: 2,
+        bloom: true, ssao: true, dof: true, volumetricFog: false, msaa: 2,
+        rainParticles: 4200, splashParticles: 420, maxStreetLights: 48, envMapSize: 256,
+        streetProps: true, facadeDetail: true, drawDistance: 900
+    }
 };
+
+const QUALITY_KEY = 'allstar.quality';
+function loadQualityName() {
+    try {
+        const v = localStorage.getItem(QUALITY_KEY);
+        if (v && QUALITY_PRESETS[v]) return v;
+    } catch (_) { /* storage blocked */ }
+    return IS_MOBILE ? 'medium' : 'high';
+}
+
+export const QUALITY_NAME = loadQualityName();
+export const QUALITY = { ...QUALITY_PRESETS[QUALITY_NAME], name: QUALITY_NAME };
+
+export function saveQualityName(name) {
+    try { localStorage.setItem(QUALITY_KEY, name); } catch (_) { /* storage blocked */ }
+}
 
 export const COLORS = {
     neonGreen: [0.72, 1.0, 0.17],

@@ -56,11 +56,21 @@ export class HUD {
             <div class="pause-panel">
                 <div class="pause-head">
                     <div class="logo-main small">ALL<svg viewBox="0 0 48 48"><path d="${STAR_PATH}"/></svg>STAR</div>
-                    <div class="tabs"><span class="tab active">MAP</span><span class="tab">CONTROLS</span></div>
+                    <div class="tabs"><span class="tab active">MAP</span><span class="tab">CONTROLS</span><span class="tab">GRAPHICS</span></div>
                 </div>
                 <div class="pause-body">
                     <div class="map-view"><canvas class="bigmap" width="720" height="720"></canvas><div class="map-legend"></div></div>
                     <div class="controls-view" hidden>${this._controlsHTML()}</div>
+                    <div class="graphics-view" hidden>
+                        <div class="gfx-title">GRAPHICS QUALITY</div>
+                        <div class="gfx-options">
+                            <button data-q="low">LOW<small>Older phones · max battery</small></button>
+                            <button data-q="medium">MEDIUM<small>iPhone default · shadows, reflections</small></button>
+                            <button data-q="high">HIGH<small>PC default · AO, depth of field, dense rain</small></button>
+                        </div>
+                        <div class="gfx-note">Post effects, resolution and shadows change instantly. Texture resolution, rain density and street detail apply after a reload.</div>
+                        <button class="gfx-reload">RELOAD WITH NEW SETTINGS</button>
+                    </div>
                 </div>
                 <button class="resume-btn">RESUME</button>
             </div>
@@ -100,7 +110,15 @@ export class HUD {
             root.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
             $(root, '.map-view').hidden = i !== 0;
             $(root, '.controls-view').hidden = i !== 1;
+            $(root, '.graphics-view').hidden = i !== 2;
         }));
+
+        root.querySelectorAll('.gfx-options button').forEach(b => b.addEventListener('click', () => {
+            game.setQuality(b.dataset.q);
+            this._markQuality(b.dataset.q);
+        }));
+        $(root, '.gfx-reload').addEventListener('click', () => window.location.reload());
+        this._markQuality(game.qualityName);
 
         this._hintTimer = 0;
         this._toastTimer = 0;
@@ -134,6 +152,10 @@ export class HUD {
             <span>B</span><b>Summon Star Cycle</b><span>F</span><b>Ride / Dismount</b>
             <span>M / Esc</span><b>Map / Pause</b>
         </div>`;
+    }
+
+    _markQuality(name) {
+        this.root.querySelectorAll('.gfx-options button').forEach(b => b.classList.toggle('active', b.dataset.q === name));
     }
 
     // ------------------------------------------------------------ screens

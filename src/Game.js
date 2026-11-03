@@ -1,5 +1,5 @@
 import * as pc from 'playcanvas';
-import { QUALITY, IS_TOUCH } from './config.js';
+import { QUALITY, QUALITY_PRESETS, IS_TOUCH, saveQualityName } from './config.js';
 import { Input } from './core/Input.js';
 import { TouchControls } from './core/TouchControls.js';
 import { PhysicsWorld } from './core/Physics.js';
@@ -28,6 +28,7 @@ export class Game {
         this.paused = true;
         this.started = false;
         this.hitStopTimer = 0;
+        this._splashPos = new pc.Vec3();
         this.defeated = false;
     }
 
@@ -110,6 +111,23 @@ export class Game {
         this.input.reset();
     }
 
+    get qualityName() { return this._qualityName || QUALITY.name; }
+
+    /** Switch graphics preset: live for post FX / resolution / shadows, the rest after reload. */
+    setQuality(name) {
+        const q = QUALITY_PRESETS[name];
+        if (!q) return;
+        this._qualityName = name;
+        saveQualityName(name);
+        this.app.graphicsDevice.maxPixelRatio = q.pixelRatio;
+        this.app.resizeCanvas();
+        this.camera.applyQuality({ ...q, name });
+        this.app.scene.lighting.shadowsEnabled = q.shadows;
+        this.env.moonLight.light.castShadows = q.shadows;
+        this.env.moonLight.light.shadowResolution = q.shadowResolution;
+        this.hud.toast(`GRAPHICS: ${q.label.toUpperCase()}`);
+    }
+
     hitStop(t) { this.hitStopTimer = Math.max(this.hitStopTimer, t); }
 
     onPlayerHit(dmg) {
@@ -161,8 +179,8 @@ export class Game {
         this.hud.setPrompt(canMount ? (IS_TOUCH ? 'Tap ✋ to ride the Star Cycle' : 'Press F to ride the Star Cycle') : null);
 
         this.combat.update(dt, input);
+        bike.update(dt, input);          // before the player so the rider (and cape) use this frame's bike pose
         p.update(dt, input);
-        bike.update(dt, input);
         this.enemies.update(dt);
         this.collectibles.update(dt);
         this.missions.update(dt);
@@ -185,7 +203,7 @@ export class Game {
 
         const cp = this.camera.entity.getPosition();
         this.city.update(dt, cp);
-        this.env.update(dt, cp);
+        this.env.update(dt, cp, this._splashPos.set(p.pos.x, this.physics.heightAt(p.pos.x, p.pos.z, p.pos.y + 0.5), p.pos.z));
         this.hud.update(dt);
         if (this.touch) this.touch.setContext({ canInteract: canMount || p.onBike, onBike: p.onBike, specialReady: p.energy >= 100 });
 

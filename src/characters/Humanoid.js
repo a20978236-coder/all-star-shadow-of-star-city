@@ -1,5 +1,8 @@
 import * as pc from 'playcanvas';
 import { damp } from '../core/MathUtils.js';
+import { Cape } from './Cape.js';
+
+const ZERO = new pc.Vec3();
 
 /**
  * Placeholder humanoid rig built from primitives with procedural animation.
@@ -27,6 +30,18 @@ export class Humanoid {
         this.shinR = this._pivot(this.legR, 0, -0.47 * s, 0);
 
         const M = opts.materials;
+        if (opts.build) opts.build(this, s, M);
+        else this._buildBlocky(M, s);
+        if (opts.cloth) this.cloth = new Cape(app, this, opts.cloth);
+
+        this.t = 0;
+        this.phase = 0;
+        this.cur = {};          // smoothed joint angles
+        this.lean = 0;
+    }
+
+    /** Simple box-based look used by the Chaos Empire soldiers. */
+    _buildBlocky(M, s) {
         // torso
         this._part(this.torso, 'box', M.suit, 0, 0.32 * s, 0, 0.46 * s, 0.56 * s, 0.26 * s);
         this._part(this.torso, 'box', M.armor, 0, 0.42 * s, -0.02 * s, 0.5 * s, 0.3 * s, 0.3 * s);
@@ -67,10 +82,6 @@ export class Humanoid {
             if (M.capeTrim) this._part(this.cape2, 'box', M.capeTrim, 0, -0.69 * s, 0.002, 0.74 * s, 0.06 * s, 0.03 * s);
         }
 
-        this.t = 0;
-        this.phase = 0;
-        this.cur = {};          // smoothed joint angles
-        this.lean = 0;
     }
 
     _pivot(parent, x, y, z) {
@@ -106,21 +117,27 @@ export class Humanoid {
         const breathe = Math.sin(this.t * 2) * 2;
 
         if (st === 'run' || st === 'sprint' || st === 'walk') {
-            const amp = Math.min(1, speed / 9) * (st === 'sprint' ? 1.2 : 1);
+            const walk = st === 'walk';
+            const amp = walk ? Math.min(1, speed / 6) * 0.62 : Math.min(1, speed / 9) * (st === 'sprint' ? 1.18 : 1);
             const sw = Math.sin(ph) * 50 * amp;
             set('legL', sw); set('legR', -sw);
-            set('shinL', -Math.max(0, Math.sin(ph + 1.2)) * 80 * amp - 5);
-            set('shinR', -Math.max(0, Math.sin(ph + 1.2 + Math.PI)) * 80 * amp - 5);
-            set('armL', -sw * 0.8, 0, -6); set('armR', sw * 0.8, 0, 6);
-            set('foreL', 40 * amp + 10); set('foreR', 40 * amp + 10);
-            set('torso', -8 * amp - (st === 'sprint' ? 10 : 0), Math.sin(ph) * 6 * amp);
-            set('head', 6 * amp);
-            bodyY = Math.abs(Math.sin(ph)) * 0.06 * amp;
+            // knee bends on the recovering leg; more on a run
+            const kneeK = walk ? 55 : 85;
+            set('shinL', -Math.max(0, Math.sin(ph + 1.2)) * kneeK * amp - (walk ? 4 : 8));
+            set('shinR', -Math.max(0, Math.sin(ph + 1.2 + Math.PI)) * kneeK * amp - (walk ? 4 : 8));
+            set('armL', -sw * (walk ? 0.7 : 0.9), 0, -6); set('armR', sw * (walk ? 0.7 : 0.9), 0, 6);
+            const elbow = walk ? 18 : 75;
+            set('foreL', elbow + Math.max(0, -Math.sin(ph)) * 20 * amp); set('foreR', elbow + Math.max(0, Math.sin(ph)) * 20 * amp);
+            set('torso', (walk ? -3 : -10) * amp - (st === 'sprint' ? 12 : 0), Math.sin(ph) * (walk ? 5 : 8) * amp, Math.sin(ph) * 2 * amp);
+            set('head', (walk ? 2 : 8) * amp, -Math.sin(ph) * 3 * amp);
+            bodyY = Math.abs(Math.sin(ph)) * (walk ? 0.03 : 0.07) * amp - (walk ? 0 : 0.03);
+            bodyRoll = Math.sin(ph) * (walk ? 1.5 : 2.5) * amp;
             cape1 += Math.sin(ph * 2) * 4;
         } else if (st === 'air') {
             const up = (p.airVel || 0) > 0;
-            set('legL', up ? 40 : 20); set('legR', up ? -10 : -20);
-            set('shinL', -60); set('shinR', -30);
+            // tuck on the way up, legs reach for the ground on the way down
+            set('legL', up ? 55 : 18); set('legR', up ? 5 : -12);
+            set('shinL', up ? -95 : -35); set('shinR', up ? -70 : -20);
             set('armL', -30, 0, -40); set('armR', -30, 0, 40);
             set('foreL', 30); set('foreR', 30);
             set('torso', up ? 5 : -5);
@@ -186,16 +203,29 @@ export class Humanoid {
             set('armR', -40, 0, 30); set('foreR', 110); set('armL', 50, 0, -20); set('foreL', 80);
             set('torso', 10, 30); set('legL', 25); set('legR', -20);
         } else {
-            // idle / combat stance
+            // idle / combat stance with a slow weight shift and look-around
             const guard = p.combatReady ? 1 : 0;
+            const shift = Math.sin(this.t * 0.7);
+            bodyRoll = shift * 1.4;
+            set('head', Math.sin(this.t * 0.37) * 3, Math.sin(this.t * 0.23) * 14 * (1 - guard), 0);
             set('armL', 8 + guard * 50, 0, -6 + breathe * 0.5); set('armR', 8 + guard * 50, 0, 6 - breathe * 0.5);
             set('foreL', 10 + guard * 80); set('foreR', 10 + guard * 80);
             set('torso', breathe * 0.4 - guard * 6);
-            set('legL', guard * 15); set('legR', -guard * 10); set('shinL', -guard * 15); set('shinR', -guard * 5);
+            set('legL', guard * 15 + shift * 2, 0, -2 - shift * 2); set('legR', -guard * 10 - shift * 2, 0, 2 - shift * 2);
+            set('shinL', -guard * 15 - Math.max(0, shift) * 6); set('shinR', -guard * 5 - Math.max(0, -shift) * 6);
             cape1 = 6 + breathe;
         }
 
-        const lambda = st === 'attack' || st === 'counter' ? 30 : 14;
+        // landing impact: brief knee bend layered over the current pose
+        const land = p.landT || 0;
+        if (land > 0 && st !== 'air' && st !== 'glide') {
+            const k = Math.sin(land * Math.PI) * Math.min(1, p.landImpact || 1);
+            const add = (j, v) => { const a = T[j] || [0, 0, 0]; T[j] = [a[0] + v, a[1], a[2]]; };
+            add('legL', 45 * k); add('legR', 45 * k); add('shinL', -80 * k); add('shinR', -80 * k);
+            add('torso', -18 * k); add('armL', 20 * k); add('armR', 20 * k);
+            bodyY -= 0.22 * k;
+        }
+        const lambda = st === 'attack' || st === 'counter' ? 30 : (land > 0 ? 24 : 14);
         const joints = ['torso', 'head', 'armL', 'armR', 'foreL', 'foreR', 'legL', 'legR', 'shinL', 'shinR'];
         for (const j of joints) {
             const target = T[j] || [0, 0, 0];
@@ -218,5 +248,11 @@ export class Humanoid {
             this.cape1.setLocalEulerAngles(-cc[0], 0, 0);
             this.cape2.setLocalEulerAngles(-cc[1], 0, 0);
         }
+        if (this.cloth) this.cloth.update(dt, p.velocity || ZERO, st);
+    }
+
+    setVisible(v) {
+        this.root.enabled = v;
+        if (this.cloth) this.cloth.setVisible(v);
     }
 }

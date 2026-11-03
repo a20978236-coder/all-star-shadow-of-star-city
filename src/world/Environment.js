@@ -2,6 +2,7 @@ import * as pc from 'playcanvas';
 import { makeMaterial } from './Materials.js';
 import { canvasTexture, makeSkyCanvas, makeDotCanvas } from './Textures.js';
 import { QUALITY } from '../config.js';
+import { createCityEnvironment } from './EnvMap.js';
 
 /**
  * Night-time atmosphere: moonlight, ambient, fog, sky dome, moon and rain.
@@ -16,6 +17,9 @@ export class Environment {
         scene.fog.density = 0.0042;
         scene.exposure = 1.1;
         scene.lighting.shadowsEnabled = QUALITY.shadows;
+        // Image-based lighting: reflections of a neon skyline on wet / glossy surfaces
+        this.envAtlas = createCityEnvironment(app, QUALITY.envMapSize);
+        if (this.envAtlas) scene.skyboxIntensity = 0.9;
 
         // Moonlight
         const moon = new pc.Entity('Moonlight');
@@ -26,7 +30,7 @@ export class Environment {
             castShadows: QUALITY.shadows,
             shadowResolution: QUALITY.shadowResolution,
             shadowDistance: 140,
-            numCascades: QUALITY.shadows ? 2 : 1,
+            numCascades: QUALITY.shadowCascades || 1,
             shadowBias: 0.3,
             normalOffsetBias: 0.06,
             shadowType: pc.SHADOW_PCF3_32F
@@ -74,6 +78,58 @@ export class Environment {
         this.moonDir = new pc.Vec3(-0.45, 0.42, -0.79).normalize();
 
         this._createRain(dot);
+        this._createSplashes(dot);
+        this.lightning = { timer: 8 + Math.random() * 10, flash: 0 };
+        this.baseMoon = this.moonLight.light.intensity;
+        this.skyMat = skyMat;
+    }
+
+    /** Small bright droplets bouncing off the ground around the player. */
+    _createSplashes(dot) {
+        const n = QUALITY.splashParticles;
+        if (!n) return;
+        const e = new pc.Entity('RainSplashes');
+        e.addComponent('particlesystem', {
+            numParticles: n,
+            lifetime: 0.28,
+            rate: 0.28 / n,
+            rate2: 0.28 / n,
+            emitterShape: pc.EMITTERSHAPE_BOX,
+            emitterExtents: new pc.Vec3(26, 0.02, 26),
+            velocityGraph: new pc.CurveSet([[0, -0.6], [0, 2.2, 1, -1], [0, -0.6]]),
+            velocityGraph2: new pc.CurveSet([[0, 0.6], [0, 1.2, 1, -2], [0, 0.6]]),
+            scaleGraph: new pc.Curve([0, 0.03, 1, 0.08]),
+            alphaGraph: new pc.Curve([0, 0.5, 1, 0]),
+            colorGraph: new pc.CurveSet([[0, 0.75], [0, 0.82], [0, 1.0]]),
+            colorMap: dot,
+            blendType: pc.BLEND_ADDITIVE,
+            depthWrite: false,
+            lighting: false,
+            loop: true,
+            autoPlay: true
+        });
+        this.app.root.addChild(e);
+        this.splashes = e;
+    }
+
+    /** Distant lightning: brief flashes of the sky and moonlight. */
+    _updateLightning(dt) {
+        const L = this.lightning;
+        L.timer -= dt;
+        if (L.timer <= 0) {
+            L.timer = 9 + Math.random() * 16;
+            L.flash = 1;
+            L.double = Math.random() < 0.5;
+        }
+        if (L.flash > 0) {
+            L.flash = Math.max(0, L.flash - dt * 4);
+            const f = L.double && L.flash < 0.5 ? (L.flash * 2) : L.flash;
+            const k = f * f;
+            this.moonLight.light.intensity = this.baseMoon + k * 3.5;
+            this.skyMat.emissiveIntensity = 1 + k * 2.5;
+            this.skyMat.update();
+            if (L.flash === 0) { this.moonLight.light.intensity = this.baseMoon; this.skyMat.emissiveIntensity = 1; this.skyMat.update(); }
+        }
     }
 
     _createRain(dot) {
@@ -104,8 +160,10 @@ export class Environment {
         this.rain = rain;
     }
 
-    update(dt, camPos) {
+    update(dt, camPos, groundPos) {
         this.rain.setPosition(camPos.x, camPos.y + 24, camPos.z);
+        if (this.splashes && groundPos) this.splashes.setPosition(groundPos.x, groundPos.y + 0.05, groundPos.z);
+        this._updateLightning(dt);
         this.sky.setPosition(camPos);
         const d = this.moonDir;
         this.moonDisc.setPosition(camPos.x + d.x * 1300, camPos.y + d.y * 1300, camPos.z + d.z * 1300);

@@ -43,6 +43,14 @@ export class TouchControls {
         this.lookLast = { x: 0, y: 0 };
         this.sprintToggled = false;
 
+        this._fit = () => {
+            // scale controls to the screen: compact on small iPhones, full size on tablets
+            const k = Math.max(0.68, Math.min(1.15, Math.min(window.innerHeight / 430, window.innerWidth / 900)));
+            this.el.style.setProperty('--touch-scale', k.toFixed(3));
+        };
+        this._fit();
+        window.addEventListener('resize', this._fit);
+        window.addEventListener('orientationchange', () => setTimeout(this._fit, 250));
         this._bindStick();
         this._bindLook();
         this._bindButtons();
@@ -58,7 +66,7 @@ export class TouchControls {
 
     _bindStick() {
         const zone = this.stickZone;
-        const maxR = 52;
+        let maxR = 52;
         const updateKnob = (dx, dy) => {
             const len = Math.hypot(dx, dy);
             const k = len > maxR ? maxR / len : 1;
@@ -79,10 +87,19 @@ export class TouchControls {
             if (this.stickId !== null) return;
             this.stickId = e.pointerId;
             capture(zone, e.pointerId);
-            const r = this.base.getBoundingClientRect();
-            this.stickOrigin.x = r.left + r.width / 2;
-            this.stickOrigin.y = r.top + r.height / 2;
-            updateKnob(e.clientX - this.stickOrigin.x, e.clientY - this.stickOrigin.y);
+            // floating stick: the base jumps under the thumb wherever it lands in the zone
+            const zr = zone.getBoundingClientRect();
+            const br = this.base.getBoundingClientRect();
+            const half = br.width / 2;                 // on-screen (scaled) radius
+            const layoutHalf = this.base.offsetWidth / 2;  // CSS layout radius
+            maxR = half * 0.7;
+            const cx = Math.min(Math.max(e.clientX, zr.left + half + 4), zr.right - half - 4);
+            const cy = Math.min(Math.max(e.clientY, zr.top + half + 4), zr.bottom - half - 4);
+            this.base.style.left = `${cx - zr.left - layoutHalf}px`;
+            this.base.style.bottom = `${zr.bottom - cy - layoutHalf}px`;
+            this.stickOrigin.x = cx;
+            this.stickOrigin.y = cy;
+            updateKnob(e.clientX - cx, e.clientY - cy);
             this.base.classList.add('active');
         });
         zone.addEventListener('pointermove', e => {
@@ -94,6 +111,8 @@ export class TouchControls {
             this.stickId = null;
             updateKnob(0, 0);
             this.base.classList.remove('active');
+            this.base.style.left = '';
+            this.base.style.bottom = '';
         };
         zone.addEventListener('pointerup', end);
         zone.addEventListener('pointercancel', end);

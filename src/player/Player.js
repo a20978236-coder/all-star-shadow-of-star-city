@@ -147,7 +147,13 @@ export class Player {
         if (input.pressed('dodge') && this.stateTime > 0.1) { this.startDodge(input); return; }
 
         const info = this._move(dt, false);
-        if (b.grounded) { this.setState('ground'); this.game.camera.shake(Math.min(0.5, -this._lastVy / 80)); return; }
+        if (b.grounded) {
+            this.setState('ground');
+            this.game.camera.shake(Math.min(0.5, -this._lastVy / 80));
+            this.landT = 1;
+            this.landImpact = clamp(-this._lastVy / 22, 0.25, 1);
+            return;
+        }
         if (info.hitWall) this._tryMantle(info, dir, 2.4);
     }
 
@@ -292,8 +298,12 @@ export class Player {
         a.airVel = b.vel.y;
         a.lean = 0;
         a.combatReady = this.game.enemies.engagedCount > 0;
+        this.landT = Math.max(0, (this.landT || 0) - dt * 3.5);
+        a.landT = this.landT;
+        a.landImpact = this.landImpact || 0;
+        a.velocity = this.state === 'bike' ? this.game.bike.body.vel : b.vel;
         switch (this.state) {
-            case 'ground': a.state = hs < 0.4 ? 'idle' : (hs > PLAYER.runSpeed + 1 ? 'sprint' : 'run'); break;
+            case 'ground': a.state = hs < 0.4 ? 'idle' : hs < PLAYER.walkSpeed + 0.8 ? 'walk' : (hs > PLAYER.runSpeed + 1 ? 'sprint' : 'run'); break;
             case 'air': a.state = 'air'; break;
             case 'glide': a.state = 'glide'; a.lean = clamp(-this.game.input.move.x * 30, -30, 30); break;
             case 'swing': a.state = 'swing'; a.swingPitch = this.grapple.swingPitch; break;
@@ -306,12 +316,19 @@ export class Player {
             case 'bike': a.state = 'ride'; a.speed = Math.abs(this.game.bike.speed); a.lean = 0; break;
             default: a.state = 'idle';
         }
-        this.model.root.setPosition(b.pos);
-        this.model.root.setEulerAngles(0, this.heading * DEG, 0);
+        if (this.state === 'bike') {
+            // sit on the Star Cycle (the bike updates first each frame, so this is current)
+            const bike = this.game.bike;
+            this.model.root.setPosition(b.pos.x, b.pos.y + 0.12, b.pos.z);
+            this.model.root.setEulerAngles(0, bike.heading * DEG, bike.lean);
+        } else {
+            this.model.root.setPosition(b.pos);
+            this.model.root.setEulerAngles(0, this.heading * DEG, 0);
+        }
         this.model.pose(dt, a);
         const cp = this.game.camera.entity.getPosition();
         this.keyLight.setPosition((cp.x + b.pos.x) * 0.5, Math.max(cp.y, b.pos.y) + 3, (cp.z + b.pos.z) * 0.5);
         // invulnerability flicker after respawn
-        this.model.root.enabled = !(this.invuln > 1 && Math.floor(this.game.time * 20) % 2 === 0);
+        this.model.setVisible(!(this.invuln > 1 && Math.floor(this.game.time * 20) % 2 === 0));
     }
 }

@@ -213,8 +213,6 @@ export class Motorcycle {
             p.body.pos.copy(b.pos);
             p.body.pos.y += 0.0;
             p.heading = this.heading;
-            p.model.root.setPosition(b.pos.x, b.pos.y + 0.12, b.pos.z);
-            p.model.root.setLocalEulerAngles(0, this.heading * DEG, this.lean);
             if (input.pressed('jump')) this.dismount(true);
             else if (input.pressed('interact')) this.dismount(false);
         }

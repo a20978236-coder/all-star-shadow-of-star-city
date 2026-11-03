@@ -6,6 +6,8 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Vec3, Mat4 } from '../core/math.js';
 import { QUALITY, IS_MOBILE } from '../config.js';
 import { ThreeEnvironment } from '../three/ThreeEnvironment.js';
@@ -251,6 +253,24 @@ export class ThreeGfx {
             };
         }
         return node;
+    }
+
+    // ------------------------------------------------------------ glTF models
+    loadModel(url) { return new GLTFLoader().loadAsync(url); }
+
+    /** Instantiate a loaded glTF. Returns { root, nodes } where nodes maps glTF node names to Nodes. */
+    instantiateModel(gltf, { castShadows = true } = {}) {
+        const scene = cloneSkinned(gltf.scene);
+        const nodes = {};
+        scene.traverse(o => {
+            if (o.name && !nodes[o.name]) nodes[o.name] = new Node(o);
+            if (o.isMesh) {
+                o.castShadow = castShadows;
+                o.receiveShadow = true;
+                o.frustumCulled = false;            // skinned bounds move with the pose
+            }
+        });
+        return { root: new Node(scene), nodes };
     }
 
     // ------------------------------------------------------------ materials & textures

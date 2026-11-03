@@ -3,6 +3,7 @@ import { makeMaterial, neonMaterial } from '../world/Materials.js';
 import { canvasTexture, makeStarCanvas, makeSuitMaps, makeGraffitiStarCanvas, makeCapeCanvases } from '../world/Textures.js';
 import { PartSet } from './ShapeBuilder.js';
 import { COLORS } from '../config.js';
+import heroGlbUrl from '../assets/models/allstar.glb?url';
 
 let allStarMats = null;
 
@@ -211,6 +212,26 @@ export function createAllStarModel(g) {
         scale: 1,
         build: buildAllStar,
         cloth: { outer: M.capeOuter, inner: M.capeInner, trim: M.capeTrim }
+    });
+}
+
+/**
+ * The real 3D All-Star (GLB from the asset pipeline, see tools/hero-*.mjs), driven by the
+ * same procedural animation as the fallback hero. Resolves to a Humanoid or rejects.
+ */
+export async function loadAllStarModel(g) {
+    const asset = await g.loadModel(heroGlbUrl);
+    const { root, nodes } = g.instantiateModel(asset, { castShadows: true });
+    return new Humanoid(g, {
+        name: 'AllStarGLB',
+        root,
+        bones: nodes,
+        // the model's bind pose has arms ~17 deg and legs ~10 deg out from the body;
+        // offset so the animation's "arms down" means arms down
+        rest: { armL: [0, 0, 15], armR: [0, 0, -15], legL: [0, 0, 7], legR: [0, 0, -7] },
+        // the cape is sculpted into the mesh: swing it less than the cloth cape
+        capeScale: 0.55,
+        capeMax: 50
     });
 }
 

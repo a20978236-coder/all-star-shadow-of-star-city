@@ -1,5 +1,5 @@
 import { Vec3 } from '../core/math.js';
-import { createAllStarModel } from '../characters/Characters.js';
+import { createAllStarModel, loadAllStarModel } from '../characters/Characters.js';
 import { PLAYER, WORLD, COMBAT } from '../config.js';
 import { clamp, damp, dampAngle, headingFromDir, dirFromHeading, DEG } from '../core/MathUtils.js';
 import { GrappleSystem } from './GrappleSystem.js';
@@ -16,8 +16,15 @@ export class Player {
         this.game = game;
         this.gfx = game.gfx;
         this.physics = game.physics;
+        // start with the built-in hero, then swap to the 3D model once it has loaded
         this.model = createAllStarModel(this.gfx);
         this.gfx.add(this.model.root);
+        const classic = typeof location !== 'undefined' && /[?&]hero=classic\b/.test(location.search);
+        if (!classic && this.gfx.loadModel) {
+            loadAllStarModel(this.gfx)
+                .then(m => this.useModel(m))
+                .catch(err => console.warn('[hero] 3D model unavailable, keeping the built-in hero:', err));
+        }
 
         this.body = { pos: spawn.clone(), vel: new Vec3(), radius: PLAYER.radius, height: PLAYER.height, grounded: false };
         this.heading = 0;
@@ -39,6 +46,17 @@ export class Player {
         // Soft cinematic key light that follows the camera so the dark suit reads at night.
         this.keyLight = this.gfx.pointLight({ name: 'HeroKeyLight', color: [0.65, 0.78, 1.0], intensity: 1.1, range: 12, falloff: 'linear' });
         this.gfx.add(this.keyLight);
+    }
+
+    /** Replace the visual model (keeps all gameplay state). */
+    useModel(model) {
+        const old = this.model;
+        this.gfx.add(model.root);
+        this.model = model;
+        old.setVisible(false);
+        old.root.destroy();
+        if (old.cloth) old.cloth.entity.destroy();
+        this.modelSource = 'glb';
     }
 
     get pos() { return this.body.pos; }

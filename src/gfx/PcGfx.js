@@ -72,6 +72,22 @@ export class PcGfx {
         return e;
     }
 
+    // ------------------------------------------------------------ glTF models
+    loadModel(url) {
+        return new Promise((resolve, reject) => {
+            this.app.assets.loadFromUrl(url, 'container', (err, asset) => (err ? reject(err) : resolve(asset)));
+        });
+    }
+
+    /** Instantiate a loaded glTF container. Returns { root, nodes } (glTF node name -> Entity). */
+    instantiateModel(asset, { castShadows = true } = {}) {
+        const root = asset.resource.instantiateRenderEntity({ castShadows, receiveShadows: true });
+        const nodes = {};
+        const walk = e => { if (e.name && !nodes[e.name]) nodes[e.name] = e; e.children.forEach(walk); };
+        walk(root);
+        return { root, nodes };
+    }
+
     // ------------------------------------------------------------ materials & textures
     texture(canvas, { srgb = true, repeat = true, mipmaps = true, name = 'tex' } = {}) {
         const tex = new pc.Texture(this.device, {

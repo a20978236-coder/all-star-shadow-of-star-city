@@ -230,7 +230,98 @@ for (let i = 0; i < N; i++) {
 // ---------------------------------------------------------------- texture
 const srcImg = input.replace(/\.json$/, '.jpg');
 const size = Number(texSize);
-const jpg = await sharp(srcImg).resize(size, size, { fit: 'fill' }).jpeg({ quality: 84, mozjpeg: true }).toBuffer();
+const { data: RGBA } = await sharp(srcImg).resize(size, size, { fit: 'fill' }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+
+// ---------------------------------------------------------------- restyle to the character sheet
+// Matches the official All-Star character sheet: black (not navy) cape shell, lime star
+// painted on the back of the cape, and an emissive map so lime/cyan details glow.
+const restyle = !process.argv.includes('--no-restyle');
+if (restyle) {
+    const mask = new Uint8Array(size * size);           // 1 = cape texel, 2 = cape texel inside the back star
+    // star outline in the cape's back plane (x right, y up), metres
+    const STAR = { cx: 0, cy: 1.17, rOut: 0.23, rIn: 0.093, width: 0.03 };
+    const starPts = [];
+    for (let k = 0; k < 10; k++) {
+        const a = Math.PI / 2 + k * Math.PI / 5;
+        const r = k % 2 === 0 ? STAR.rOut : STAR.rIn;
+        starPts.push([STAR.cx + Math.cos(a) * r, STAR.cy + Math.sin(a) * r]);
+    }
+    const distToStar = (x, y) => {
+        let best = Infinity;
+        for (let k = 0; k < 10; k++) {
+            const [ax, ay] = starPts[k], [bx, by] = starPts[(k + 1) % 10];
+            const vx = bx - ax, vy = by - ay, t = Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy)));
+            best = Math.min(best, Math.hypot(x - ax - vx * t, y - ay - vy * t));
+        }
+        return best;
+    };
+    for (let t = 0; t < IDXK.length; t += 3) {
+        const a = IDXK[t], b = IDXK[t + 1], c = IDXK[t + 2];
+        if (label[a] !== 'cape' || label[b] !== 'cape' || label[c] !== 'cape') continue;
+        // facing the back (+Z) => candidate for the star decal
+        const nz = (NRM[a * 3 + 2] + NRM[b * 3 + 2] + NRM[c * 3 + 2]) / 3;
+        const u = [UV[a * 2] * size, UV[b * 2] * size, UV[c * 2] * size];
+        const v = [UV[a * 2 + 1] * size, UV[b * 2 + 1] * size, UV[c * 2 + 1] * size];
+        const x0 = Math.max(0, Math.floor(Math.min(...u))), x1 = Math.min(size - 1, Math.ceil(Math.max(...u)));
+        const y0 = Math.max(0, Math.floor(Math.min(...v))), y1 = Math.min(size - 1, Math.ceil(Math.max(...v)));
+        const den = (v[1] - v[2]) * (u[0] - u[2]) + (u[2] - u[1]) * (v[0] - v[2]);
+        if (Math.abs(den) < 1e-9 || (x1 - x0) * (y1 - y0) > 40000) continue;
+        for (let py = y0; py <= y1; py++) for (let px = x0; px <= x1; px++) {
+            const qx = px + 0.5, qy = py + 0.5;
+            const w0 = ((v[1] - v[2]) * (qx - u[2]) + (u[2] - u[1]) * (qy - v[2])) / den;
+            const w1 = ((v[2] - v[0]) * (qx - u[2]) + (u[0] - u[2]) * (qy - v[2])) / den;
+            const w2 = 1 - w0 - w1;
+            if (w0 < -0.02 || w1 < -0.02 || w2 < -0.02) continue;
+            const id = py * size + px;
+            if (mask[id] === 0) mask[id] = 1;
+            if (nz > 0.25) {
+                const X = P[a * 3] * w0 + P[b * 3] * w1 + P[c * 3] * w2;
+                const Y = P[a * 3 + 1] * w0 + P[b * 3 + 1] * w1 + P[c * 3 + 1] * w2;
+                // viewed from behind, +X is the viewer's left: mirror so the star reads correctly
+                const d = distToStar(-X, Y);
+                if (d < STAR.width) mask[id] = 2 + Math.min(253, Math.round((1 - d / STAR.width) * 253));
+            }
+        }
+    }
+    let capePx = 0, starPx = 0;
+    for (let i = 0; i < size * size; i++) {
+        const m = mask[i];
+        if (!m) continue;
+        const o = i * 4, r = RGBA[o], g = RGBA[o + 1], b = RGBA[o + 2];
+        const lime = g > 120 && g > r * 1.15 && g > b * 1.5;
+        if (!lime) {
+            // navy -> near-black with a faint cool sheen (sheet: black cape)
+            capePx++;
+            const lum = 0.3 * r + 0.55 * g + 0.15 * b;
+            RGBA[o] = Math.round(lum * 0.42 + 2);
+            RGBA[o + 1] = Math.round(lum * 0.44 + 2);
+            RGBA[o + 2] = Math.round(lum * 0.52 + 4);
+        }
+        if (m >= 2) {
+            starPx++;
+            const k = Math.min(1, (m - 2) / 120);             // soft edge
+            RGBA[o] = Math.round(RGBA[o] * (1 - k) + 184 * k);
+            RGBA[o + 1] = Math.round(RGBA[o + 1] * (1 - k) + 255 * k);
+            RGBA[o + 2] = Math.round(RGBA[o + 2] * (1 - k) + 44 * k);
+        }
+    }
+    console.log(`restyle: cape texels darkened ${capePx}, star texels ${starPx}`);
+}
+// emissive map: only the lime and cyan suit/cape details glow
+const EMI = Buffer.alloc(size * size * 3);
+for (let i = 0; i < size * size; i++) {
+    const r = RGBA[i * 4], g = RGBA[i * 4 + 1], b = RGBA[i * 4 + 2];
+    const lime = g > 140 && g > r * 1.15 && g > b * 1.6;
+    const cyan = b > 150 && g > 110 && r < 110 && b > r * 1.6;
+    if (lime || cyan) {
+        const k = Math.min(1, (Math.max(g, b) - 110) / 120);
+        EMI[i * 3] = Math.round(r * k); EMI[i * 3 + 1] = Math.round(g * k); EMI[i * 3 + 2] = Math.round(b * k);
+    }
+}
+const rgb = Buffer.alloc(size * size * 3);
+for (let i = 0; i < size * size; i++) { rgb[i * 3] = RGBA[i * 4]; rgb[i * 3 + 1] = RGBA[i * 4 + 1]; rgb[i * 3 + 2] = RGBA[i * 4 + 2]; }
+const jpg = await sharp(rgb, { raw: { width: size, height: size, channels: 3 } }).jpeg({ quality: 84, mozjpeg: true }).toBuffer();
+const emiJpg = await sharp(EMI, { raw: { width: size, height: size, channels: 3 } }).resize(size / 2, size / 2).jpeg({ quality: 80, mozjpeg: true }).toBuffer();
 
 // ---------------------------------------------------------------- write glTF
 const doc = new Document();
@@ -244,8 +335,11 @@ const prim = doc.createPrimitive()
     .setAttribute('WEIGHTS_0', acc('VEC4', WEIGHTS))
     .setIndices(acc('SCALAR', N > 65535 ? IDXK : Uint16Array.from(IDXK)));
 const tex = doc.createTexture('allstar_basecolor').setImage(jpg).setMimeType('image/jpeg');
+const emiTex = doc.createTexture('allstar_emissive').setImage(emiJpg).setMimeType('image/jpeg');
 const mat = doc.createMaterial('allstar')
     .setBaseColorTexture(tex)
+    .setEmissiveTexture(emiTex)
+    .setEmissiveFactor([1, 1, 1])
     .setRoughnessFactor(0.55)
     .setMetallicFactor(0.15);
 prim.setMaterial(mat);

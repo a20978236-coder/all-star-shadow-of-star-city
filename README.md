@@ -176,7 +176,13 @@ npm run hero:build
 | --- | --- | --- |
 | 1 | `tools/hero-optimize.mjs` | weld + meshoptimizer simplify (1M → 50k triangles) |
 | 2 | `tools/hero-rig.mjs` | face −Z, scale to 1.85 m, build the skeleton, capsule skin weights, cut cape↔limb "bridge" triangles the AI mesh fused, smooth weights over mesh edges, smooth normals, 2048² JPEG |
+| 2b | `tools/hero-rig.mjs` (restyle) | matches the official character sheet (`docs/reference/allstar-character-sheet.webp`): black cape shell, lime star projected onto the back of the cape, emissive map so lime/cyan details glow. Skip with `--no-restyle` |
 | 3 | `tools/hero-rig-check.mjs` | poses the rig (run / glide / kick) and reports stretched triangles |
+
+**Making a new model from the character sheet:** this pipeline can't create 3D from a 2D
+image. Generate a GLB with an image-to-3D tool (for example Meshy, Tripo or Hunyuan3D, using
+the sheet's front/side/back views as multi-view input) or commission an artist, save it as
+`assets-src/allstar-raw.glb`, and run `npm run hero:build`.
 
 Joint positions in `hero-rig.mjs` were measured for this model; a different model needs them
 re-measured. For production quality, a hand-rigged model (Blender/Maya, or Mixamo auto-rig)

@@ -152,8 +152,14 @@ resolution, rain density, light count and disables shadows for performance.
 
 ## 3D hero model (glTF)
 
-All-Star is now a real 3D model: `src/assets/models/allstar.glb` (≈2 MB, 49k triangles,
-2048² texture, 14-joint skeleton). Both renderers load it at start-up and swap it in for the
+All-Star is a real 3D model in two detail levels, picked by the graphics preset:
+
+| File | Used on | Triangles | Textures |
+| --- | --- | --- | --- |
+| `src/assets/models/allstar_hd.glb` (≈6 MB) | High (PC) | 99k | 4096² colour, 2048² normal + metallic/roughness + glow |
+| `src/assets/models/allstar.glb` (≈3 MB) | Medium / Low (iPhone) | 49k | 2048² colour, 1024² normal + metallic/roughness + glow |
+
+Both have a 14-joint skeleton. Both renderers load it at start-up and swap it in for the
 built-in hero; if it fails to load, the built-in hero stays. Add `?hero=classic` to the URL to
 force the built-in hero.
 
@@ -177,7 +183,15 @@ npm run hero:build
 | 1 | `tools/hero-optimize.mjs` | weld + meshoptimizer simplify (1M → 50k triangles) |
 | 2 | `tools/hero-rig.mjs` | face −Z, scale to 1.85 m, build the skeleton, capsule skin weights, cut cape↔limb "bridge" triangles the AI mesh fused, smooth weights over mesh edges, smooth normals, 2048² JPEG |
 | 2b | `tools/hero-rig.mjs` (restyle) | matches the official character sheet (`docs/reference/allstar-character-sheet.webp`): black cape shell, lime star projected onto the back of the cape, emissive map so lime/cyan details glow. Skip with `--no-restyle` |
+| 2c | `tools/hero-rig.mjs` (maps) | detail normal map from the texture's high-frequency luminance (skin kept smooth), metallic/roughness by material (skin, armour, cape fabric, glowing trim), MikkTSpace tangents. Skip with `--no-maps` |
 | 3 | `tools/hero-rig-check.mjs` | poses the rig (run / glide / kick) and reports stretched triangles |
+
+**Rigged FBX (e.g. from Meshy):** `npm run hero:extract-fbx-rig` reads a rigged FBX
+(`assets-src/allstar-rigged.fbx`) and dumps its skeleton and weights to `.cache/fbx_rig.json`.
+The supplied *Neon_Star_Sentinel.fbx* is a separate low-detail regeneration (3.5k triangles,
+knees ~15 cm higher, different cape), so its rig is not transferred onto the detailed mesh.
+To get a professional rig that matches exactly, rig the detailed model itself (upload
+`allstar_hd.glb` or the raw GLB to Meshy/Mixamo's auto-rigger).
 
 **Making a new model from the character sheet:** this pipeline can't create 3D from a 2D
 image. Generate a GLB with an image-to-3D tool (for example Meshy, Tripo or Hunyuan3D, using

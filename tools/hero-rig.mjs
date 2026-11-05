@@ -9,11 +9,14 @@
 // - computes smooth skin weights (capsule distance + joint blending, cape chain)
 // - smooth normals across UV seams, resized texture
 import { Document, NodeIO } from '@gltf-transform/core';
+import { tangents, unweld, weld } from '@gltf-transform/functions';
+import { generateTangents } from 'mikktspace';
 import sharp from 'sharp';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const [, , input, output, texSize = '2048'] = process.argv;
+// --maps (default on): generate normal + metallic/roughness detail maps from the texture
 const raw = JSON.parse(fs.readFileSync(input, 'utf8'));
 const P = Float32Array.from(raw.pos);
 const UV = Float32Array.from(raw.uv);
@@ -236,6 +239,7 @@ const { data: RGBA } = await sharp(srcImg).resize(size, size, { fit: 'fill' }).e
 // Matches the official All-Star character sheet: black (not navy) cape shell, lime star
 // painted on the back of the cape, and an emissive map so lime/cyan details glow.
 const restyle = !process.argv.includes('--no-restyle');
+let capeMask = null;
 if (restyle) {
     const mask = new Uint8Array(size * size);           // 1 = cape texel, 2 = cape texel inside the back star
     // star outline in the cape's back plane (x right, y up), metres
@@ -305,6 +309,7 @@ if (restyle) {
             RGBA[o + 2] = Math.round(RGBA[o + 2] * (1 - k) + 44 * k);
         }
     }
+    capeMask = mask;
     console.log(`restyle: cape texels darkened ${capePx}, star texels ${starPx}`);
 }
 // emissive map: only the lime and cyan suit/cape details glow
@@ -323,6 +328,71 @@ for (let i = 0; i < size * size; i++) { rgb[i * 3] = RGBA[i * 4]; rgb[i * 3 + 1]
 const jpg = await sharp(rgb, { raw: { width: size, height: size, channels: 3 } }).jpeg({ quality: 84, mozjpeg: true }).toBuffer();
 const emiJpg = await sharp(EMI, { raw: { width: size, height: size, channels: 3 } }).resize(size / 2, size / 2).jpeg({ quality: 80, mozjpeg: true }).toBuffer();
 
+// ---------------------------------------------------------------- detail maps (normal + metallic/roughness)
+// The AI texture already contains the painted surface detail (panel seams, hex armour, fabric
+// folds, hair strands). A high-passed luminance height gives it real relief under lighting;
+// a per-material classification gives skin, armour, cape fabric and glowing trims believable
+// roughness/metalness. Neither changes the outfit's colours.
+const maps = !process.argv.includes('--no-maps');
+let nrmJpg = null, ormJpg = null;
+if (maps) {
+    const ms = size / 2;                                    // detail maps at half the colour resolution
+    // float luminance + skin mask at map resolution (2x2 box downsample)
+    const lum = new Float32Array(ms * ms), skinM = new Float32Array(ms * ms);
+    const isSkin = o => { const r = RGBA[o], g = RGBA[o + 1], b = RGBA[o + 2], L = 0.3 * r + 0.59 * g + 0.11 * b; return r > 70 && r > g * 1.12 && g > b * 1.04 && r - b > 22 && L > 45; };
+    for (let y = 0; y < ms; y++) for (let x = 0; x < ms; x++) {
+        let L = 0, sk = 0;
+        for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+            const o = ((y * 2 + dy) * size + x * 2 + dx) * 4;
+            L += 0.3 * RGBA[o] + 0.59 * RGBA[o + 1] + 0.11 * RGBA[o + 2];
+            sk += isSkin(o) ? 1 : 0;
+        }
+        lum[y * ms + x] = L / (4 * 255); skinM[y * ms + x] = sk / 4;
+    }
+    const boxBlur = (src, r) => {               // separable box blur (float), clamp at edges
+        const tmp = new Float32Array(src.length), out = new Float32Array(src.length), w = 2 * r + 1;
+        for (let y = 0; y < ms; y++) { let acc = 0; for (let x = -r; x <= r; x++) acc += src[y * ms + Math.min(ms - 1, Math.max(0, x))];
+            for (let x = 0; x < ms; x++) { tmp[y * ms + x] = acc / w; acc += src[y * ms + Math.min(ms - 1, x + r + 1)] - src[y * ms + Math.max(0, x - r)]; } }
+        for (let x = 0; x < ms; x++) { let acc = 0; for (let y = -r; y <= r; y++) acc += tmp[Math.min(ms - 1, Math.max(0, y)) * ms + x];
+            for (let y = 0; y < ms; y++) { out[y * ms + x] = acc / w; acc += tmp[Math.min(ms - 1, y + r + 1) * ms + x] - tmp[Math.max(0, y - r) * ms + x]; } }
+        return out;
+    };
+    const fine = boxBlur(boxBlur(lum, 1), 1);                 // removes 8-bit terracing
+    const low = boxBlur(boxBlur(lum, Math.round(ms / 128)), Math.round(ms / 128));
+    const skinSoft = boxBlur(skinM, 3);
+    const Hh = new Float32Array(ms * ms);
+    for (let i = 0; i < ms * ms; i++) Hh[i] = (fine[i] - low[i]) * (1 - Math.min(1, skinSoft[i] * 1.5));   // no relief on skin
+    const NM = Buffer.alloc(ms * ms * 3);
+    const strength = 1.6 * (ms / 1024);
+    const at = (x, y) => Hh[Math.min(ms - 1, Math.max(0, y)) * ms + Math.min(ms - 1, Math.max(0, x))];
+    for (let y = 0; y < ms; y++) for (let x = 0; x < ms; x++) {
+        const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
+        const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
+        const l = Math.hypot(dx, dy, 1), o = (y * ms + x) * 3;
+        NM[o] = Math.round((-dx / l * 0.5 + 0.5) * 255);
+        NM[o + 1] = Math.round((dy / l * 0.5 + 0.5) * 255);                     // glTF: +Y up (V runs down the image)
+        NM[o + 2] = Math.round((1 / l * 0.5 + 0.5) * 255);
+    }
+    nrmJpg = await sharp(NM, { raw: { width: ms, height: ms, channels: 3 } }).jpeg({ quality: 90, mozjpeg: true }).toBuffer();
+    // ORM: R = occlusion (cavities from the low-frequency luminance), G = roughness, B = metalness
+    const ORM = Buffer.alloc(size * size * 3);
+    for (let i = 0; i < size * size; i++) {
+        const r = RGBA[i * 4], g = RGBA[i * 4 + 1], b = RGBA[i * 4 + 2];
+        const L = 0.3 * r + 0.59 * g + 0.11 * b;
+        let rough, metal;
+        const glow = (g > 140 && g > r * 1.15 && g > b * 1.6) || (b > 150 && g > 110 && r < 110 && b > r * 1.6);
+        const skin = r > 70 && r > g * 1.12 && g > b * 1.04 && r - b > 22 && L > 45;
+        if (glow) { rough = 0.32; metal = 0.0; }
+        else if (capeMask && capeMask[i]) { rough = 0.72; metal = 0.04; }          // cape fabric
+        else if (skin) { rough = 0.52; metal = 0.0; }
+        else if (L < 38) { rough = 0.38; metal = 0.55; }                            // black armour plates
+        else { rough = 0.58; metal = 0.18; }                                          // suit, belt, hair
+        ORM[i * 3] = 255; ORM[i * 3 + 1] = Math.round(rough * 255); ORM[i * 3 + 2] = Math.round(metal * 255);
+    }
+    ormJpg = await sharp(ORM, { raw: { width: size, height: size, channels: 3 } }).resize(ms, ms).jpeg({ quality: 85, mozjpeg: true }).toBuffer();
+    console.log(`detail maps: normal + metallic/roughness at ${ms}x${ms}`);
+}
+
 // ---------------------------------------------------------------- write glTF
 const doc = new Document();
 const buf = doc.createBuffer();
@@ -336,10 +406,15 @@ const prim = doc.createPrimitive()
     .setIndices(acc('SCALAR', N > 65535 ? IDXK : Uint16Array.from(IDXK)));
 const tex = doc.createTexture('allstar_basecolor').setImage(jpg).setMimeType('image/jpeg');
 const emiTex = doc.createTexture('allstar_emissive').setImage(emiJpg).setMimeType('image/jpeg');
+const nrmTex = nrmJpg && doc.createTexture('allstar_normal').setImage(nrmJpg).setMimeType('image/jpeg');
+const ormTex = ormJpg && doc.createTexture('allstar_metal_rough').setImage(ormJpg).setMimeType('image/jpeg');
 const mat = doc.createMaterial('allstar')
     .setBaseColorTexture(tex)
     .setEmissiveTexture(emiTex)
     .setEmissiveFactor([1, 1, 1])
+    .setNormalTexture(nrmTex || null)
+    .setNormalScale(nrmTex ? 0.6 : 1)
+    .setMetallicRoughnessTexture(ormTex || null)
     .setRoughnessFactor(0.55)
     .setMetallicFactor(0.15);
 prim.setMaterial(mat);
@@ -365,6 +440,11 @@ doc.createScene('scene').addChild(root);
 doc.getRoot().getAsset().generator = 'all-star hero pipeline (tools/hero-rig.mjs)';
 
 fs.mkdirSync(path.dirname(output), { recursive: true });
+if (nrmTex) {
+    if (ormTex) mat.setRoughnessFactor(1).setMetallicFactor(1);          // the map carries the values
+    // MikkTSpace tangents for the normal map (needs an unwelded mesh, then re-weld)
+    await doc.transform(unweld(), tangents({ generateTangents, overwrite: true }), weld());
+}
 await new NodeIO().write(output, doc);
 const kb = Math.round(fs.statSync(output).size / 1024);
 console.log(`bridge triangles cut: ${cut}, island triangles removed: ${islandTris}`);

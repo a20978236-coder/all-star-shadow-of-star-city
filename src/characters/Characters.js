@@ -4,6 +4,8 @@ import { canvasTexture, makeStarCanvas, makeSuitMaps, makeGraffitiStarCanvas, ma
 import { PartSet } from './ShapeBuilder.js';
 import { COLORS } from '../config.js';
 import heroGlbUrl from '../assets/models/allstar.glb?url';
+import heroHdGlbUrl from '../assets/models/allstar_hd.glb?url';
+import { QUALITY } from '../config.js';
 
 let allStarMats = null;
 
@@ -220,7 +222,13 @@ export function createAllStarModel(g) {
  * same procedural animation as the fallback hero. Resolves to a Humanoid or rejects.
  */
 export async function loadAllStarModel(g) {
-    const asset = await g.loadModel(heroGlbUrl);
+    // High quality (PC): 99k triangles + 4K texture; Medium/Low (iPhone): 49k + 2K. Both carry
+    // normal, metallic/roughness and emissive maps. Falls back to the light model on failure.
+    let asset;
+    if (QUALITY.name === 'high') {
+        try { asset = await g.loadModel(heroHdGlbUrl); } catch (err) { console.warn('[hero] HD model failed, using standard:', err); }
+    }
+    if (!asset) asset = await g.loadModel(heroGlbUrl);
     const { root, nodes } = g.instantiateModel(asset, { castShadows: true });
     return new Humanoid(g, {
         name: 'AllStarGLB',

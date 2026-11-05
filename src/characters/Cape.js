@@ -1,12 +1,12 @@
-import * as pc from 'playcanvas';
+import { Vec3, Mat4 } from '../core/math.js';
 
 const W = 8;          // columns
 const H = 12;         // rows
 const ITER = 5;
 
-const tmpA = new pc.Vec3();
-const tmpB = new pc.Vec3();
-const inv = new pc.Mat4();
+const tmpA = new Vec3();
+const tmpB = new Vec3();
+const inv = new Mat4();
 
 /**
  * Verlet cloth cape pinned to the hero's shoulders. Reacts to running, wind
@@ -15,8 +15,8 @@ const inv = new pc.Mat4();
  * lime-green lining.
  */
 export class Cape {
-    constructor(app, rig, { outer, inner, trim }) {
-        this.app = app;
+    constructor(g, rig, { outer, inner, trim }) {
+        this.gfx = g;
         this.rig = rig;
         const n = W * H;
         this.pos = new Float32Array(n * 3);
@@ -26,8 +26,8 @@ export class Cape {
         this.topWidth = 0.5;
         this.bottomWidth = 1.2;
         this.segV = this.length / (H - 1);
-        this.wind = new pc.Vec3();
-        this.lastRoot = new pc.Vec3();
+        this.wind = new Vec3();
+        this.lastRoot = new Vec3();
         this.initialised = false;
         this.time = 0;
 
@@ -49,22 +49,15 @@ export class Cape {
         this.normalsIn = new Float32Array(n * 3);
         this.posOut = new Float32Array(n * 3);
         this.posIn = new Float32Array(n * 3);
-        const mk = (indices, mat, positions, normals) => {
-            const mesh = new pc.Mesh(app.graphicsDevice);
-            mesh.setPositions(positions);
-            mesh.setNormals(normals);
-            mesh.setUvs(0, uvs);
-            mesh.setIndices(new Uint16Array(indices));
-            mesh.update(pc.PRIMITIVE_TRIANGLES);
-            const mi = new pc.MeshInstance(mesh, mat);
-            mi.cull = false;
-            return { mesh, mi };
-        };
-        this.outer = mk(idx, outer, this.posOut, this.normalsOut);
-        this.inner = mk(idxInner, inner, this.posIn, this.normalsIn);
-        this.entity = new pc.Entity('CapeCloth');
-        this.entity.addComponent('render', { meshInstances: [this.outer.mi, this.inner.mi], castShadows: true, receiveShadows: true });
-        app.root.addChild(this.entity);
+        const mk = (indices, mat, positions, normals, name) => g.customMesh(
+            { positions, normals, uvs, indices: new Uint16Array(indices) }, mat,
+            { castShadows: true, receiveShadows: true, dynamic: true, name });
+        this.entity = g.node('CapeCloth');
+        this.outer = mk(idx, outer, this.posOut, this.normalsOut, 'capeOuter');
+        this.inner = mk(idxInner, inner, this.posIn, this.normalsIn, 'capeInner');
+        this.entity.addChild(this.outer);
+        this.entity.addChild(this.inner);
+        g.add(this.entity);
 
         // glowing hem trim (a thin strip following the bottom row)
         this.trimMat = trim;
@@ -257,11 +250,8 @@ export class Cape {
             PO[k] = P[k] + nx * 0.004; PO[k + 1] = P[k + 1] + ny * 0.004; PO[k + 2] = P[k + 2] + nz * 0.004;
             PI[k] = P[k] - nx * 0.004; PI[k + 1] = P[k + 1] - ny * 0.004; PI[k + 2] = P[k + 2] - nz * 0.004;
         }
-        for (const [m, p, n] of [[this.outer.mesh, PO, NO], [this.inner.mesh, PI, NI]]) {
-            m.setPositions(p);
-            m.setNormals(n);
-            m.update(pc.PRIMITIVE_TRIANGLES, false);
-        }
+        this.outer.updateGeometry(PO, NO);
+        this.inner.updateGeometry(PI, NI);
     }
 
     setVisible(v) { this.entity.enabled = v; }

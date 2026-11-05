@@ -6,12 +6,21 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "hero:build": "node tools/hero-optimize.mjs assets-src/allstar-raw.glb .cache/hero.json 50000 && node tools/hero-rig.mjs .cache/hero.json src/assets/models/allstar.glb 2048 && node tools/hero-optimize.mjs assets-src/allstar-raw.glb .cache/hero_hd.json 100000 && node tools/hero-rig.mjs .cache/hero_hd.json src/assets/models/allstar_hd.glb 4096 && node tools/hero-rig-check.mjs src/assets/models/allstar.glb && node tools/hero-rig-check.mjs src/assets/models/allstar_hd.glb",
+    "hero:check": "node tools/hero-rig-check.mjs src/assets/models/allstar.glb && node tools/hero-rig-check.mjs src/assets/models/allstar_hd.glb",
+    "hero:extract-fbx-rig": "node tools/hero-fbx-extract.mjs assets-src/allstar-rigged.fbx .cache/fbx_rig.json"
   },
   "dependencies": {
-    "playcanvas": "2.23.3"
+    "playcanvas": "2.23.3",
+    "three": "0.180.0"
   },
   "devDependencies": {
+    "@gltf-transform/core": "4.2.1",
+    "@gltf-transform/functions": "4.2.1",
+    "meshoptimizer": "0.25.0",
+    "mikktspace": "1.1.1",
+    "sharp": "0.34.4",
     "vite": "^7.1.0"
   }
 }

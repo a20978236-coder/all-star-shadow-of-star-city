@@ -1,8 +1,8 @@
-import * as pc from 'playcanvas';
+import { Vec3 } from '../core/math.js';
 import { damp } from '../core/MathUtils.js';
 import { Cape } from './Cape.js';
 
-const ZERO = new pc.Vec3();
+const ZERO = new Vec3();
 
 /**
  * Placeholder humanoid rig built from primitives with procedural animation.
@@ -10,12 +10,29 @@ const ZERO = new pc.Vec3();
  * The model faces -Z.
  */
 export class Humanoid {
-    constructor(app, opts) {
-        this.app = app;
+    /** g = graphics backend (see gfx/gfx.js). */
+    constructor(g, opts) {
+        this.gfx = g;
         this.opts = opts;
         const s = opts.scale || 1;
-        this.root = new pc.Entity(opts.name || 'Humanoid');
-        this.body = new pc.Entity('body');           // tilt/lean pivot at the feet
+        this.rest = opts.rest || {};          // per-joint euler offsets for a model's bind pose
+        this.capeScale = opts.capeScale ?? 1;
+        this.capeMax = opts.capeMax ?? 180;
+        if (opts.bones) {
+            // Drive a skinned model's skeleton directly: its joints are the rig pivots.
+            const b = opts.bones;
+            this.root = opts.root;
+            for (const k of ['body', 'pelvis', 'torso', 'head', 'armL', 'armR', 'foreL', 'foreR', 'legL', 'legR', 'shinL', 'shinR']) {
+                if (!b[k]) throw new Error(`model is missing joint "${k}"`);
+                this[k] = b[k];
+            }
+            if (b.cape1) this.cape1 = b.cape1;
+            if (b.cape2) this.cape2 = b.cape2;
+            this.t = 0; this.phase = 0; this.cur = {}; this.lean = 0;
+            return;
+        }
+        this.root = g.node(opts.name || 'Humanoid');
+        this.body = g.node('body');           // tilt/lean pivot at the feet
         this.root.addChild(this.body);
         this.pelvis = this._pivot(this.body, 0, 0.98 * s, 0);
         this.torso = this._pivot(this.pelvis, 0, 0.05 * s, 0);
@@ -32,7 +49,7 @@ export class Humanoid {
         const M = opts.materials;
         if (opts.build) opts.build(this, s, M);
         else this._buildBlocky(M, s);
-        if (opts.cloth) this.cloth = new Cape(app, this, opts.cloth);
+        if (opts.cloth) this.cloth = new Cape(g, this, opts.cloth);
 
         this.t = 0;
         this.phase = 0;
@@ -85,15 +102,14 @@ export class Humanoid {
     }
 
     _pivot(parent, x, y, z) {
-        const e = new pc.Entity();
+        const e = this.gfx.node('joint');
         e.setLocalPosition(x, y, z);
         parent.addChild(e);
         return e;
     }
 
-    _part(parent, type, material, x, y, z, sx, sy, sz) {
-        const e = new pc.Entity();
-        e.addComponent('render', { type, material, castShadows: true, receiveShadows: true });
+    _part(parent, type, material, x, y, z, sx, sy, sz, castShadows = true) {
+        const e = this.gfx.mesh(type, material, { castShadows, receiveShadows: true });
         e.setLocalPosition(x, y, z);
         e.setLocalScale(sx, sy, sz);
         parent.addChild(e);
@@ -232,7 +248,9 @@ export class Humanoid {
             const c = this.cur[j] || (this.cur[j] = [0, 0, 0]);
             for (let k = 0; k < 3; k++) c[k] = damp(c[k], target[k], lambda, dt);
             // pitch: positive rotates the limb forward (towards -Z)
-            this[j].setLocalEulerAngles(c[0], c[1], c[2]);
+            const r = this.rest[j];
+            if (r) this[j].setLocalEulerAngles(c[0] + r[0], c[1] + r[1], c[2] + r[2]);
+            else this[j].setLocalEulerAngles(c[0], c[1], c[2]);
         }
         const b = this.cur.body || (this.cur.body = [0, 0, 0]);
         b[0] = damp(b[0], bodyPitch, 10, dt);
@@ -245,8 +263,9 @@ export class Humanoid {
             const cc = this.cur.cape || (this.cur.cape = [0, 0]);
             cc[0] = damp(cc[0], cape1 + flutter, 8, dt);
             cc[1] = damp(cc[1], cape2 - flutter * 0.6, 8, dt);
-            this.cape1.setLocalEulerAngles(-cc[0], 0, 0);
-            this.cape2.setLocalEulerAngles(-cc[1], 0, 0);
+            const k = this.capeScale, mx = this.capeMax;
+            this.cape1.setLocalEulerAngles(-Math.min(mx, cc[0] * k), 0, 0);
+            this.cape2.setLocalEulerAngles(-Math.min(mx * 0.6, cc[1] * k), 0, 0);
         }
         if (this.cloth) this.cloth.update(dt, p.velocity || ZERO, st);
     }

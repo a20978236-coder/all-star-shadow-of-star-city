@@ -1,9 +1,11 @@
-import * as pc from 'playcanvas';
 import { Humanoid } from './Humanoid.js';
 import { makeMaterial, neonMaterial } from '../world/Materials.js';
 import { canvasTexture, makeStarCanvas, makeSuitMaps, makeGraffitiStarCanvas, makeCapeCanvases } from '../world/Textures.js';
 import { PartSet } from './ShapeBuilder.js';
 import { COLORS } from '../config.js';
+import heroGlbUrl from '../assets/models/allstar.glb?url';
+import heroHdGlbUrl from '../assets/models/allstar_hd.glb?url';
+import { QUALITY } from '../config.js';
 
 let allStarMats = null;
 
@@ -11,18 +13,17 @@ let allStarMats = null;
 export const HERO_GREEN = COLORS.neonGreen;
 export const HERO_CYAN = [0.2, 0.8, 1.0];
 
-function heroMaterials(app) {
+function heroMaterials() {
     if (allStarMats) return allStarMats;
-    const dev = app.graphicsDevice;
+    const dev = null;
     const star = canvasTexture(dev, makeGraffitiStarCanvas('#b8ff2c', 256), { repeat: false, name: 'heroStar' });
     const buckleStar = canvasTexture(dev, makeStarCanvas('#b8ff2c', true, 4), { repeat: false, name: 'heroBuckle' });
     const cape = makeCapeCanvases('#b8ff2c');
     const suitMaps = makeSuitMaps(256);
-    const suit = makeMaterial({ name: 'heroSuit', diffuse: [1, 1, 1], diffuseMap: canvasTexture(dev, suitMaps.diffuse, { name: 'suit_d' }), tiling: [2, 2], gloss: 0.5, metalness: 0.3 });
-    suit.normalMap = canvasTexture(dev, suitMaps.normal, { name: 'suit_n', srgb: false });
-    suit.normalMapTiling = new pc.Vec2(2, 2);
-    suit.bumpiness = 0.9;
-    suit.update();
+    const suit = makeMaterial({
+        name: 'heroSuit', diffuse: [1, 1, 1], diffuseMap: canvasTexture(dev, suitMaps.diffuse, { name: 'suit_d' }), tiling: [2, 2], gloss: 0.5, metalness: 0.3,
+        normalMap: canvasTexture(dev, suitMaps.normal, { name: 'suit_n', srgb: false }), normalTiling: [2, 2], bumpiness: 0.9
+    });
     allStarMats = {
         suit,
         armor: makeMaterial({ name: 'heroArmor', diffuse: [0.04, 0.045, 0.055], gloss: 0.74, metalness: 0.65 }),
@@ -38,8 +39,8 @@ function heroMaterials(app) {
         hair: makeMaterial({ name: 'heroHair', diffuse: [0.032, 0.022, 0.017], gloss: 0.28, metalness: 0 }),
         eyeWhite: makeMaterial({ name: 'heroEyeWhite', diffuse: [0.86, 0.84, 0.8], gloss: 0.9 }),
         iris: makeMaterial({ name: 'heroIris', diffuse: [0.16, 0.08, 0.035], gloss: 0.95, metalness: 0.1 }),
-        emblem: makeMaterial({ name: 'heroEmblem', diffuse: [0, 0, 0], emissiveMap: star, emissive: [1, 1, 1], emissiveIntensity: 1.5, opacityMap: star, blend: pc.BLEND_ADDITIVE, twoSided: true }),
-        buckle: makeMaterial({ name: 'heroBuckle', diffuse: [0, 0, 0], emissiveMap: buckleStar, emissive: [1, 1, 1], emissiveIntensity: 1.6, opacityMap: buckleStar, blend: pc.BLEND_ADDITIVE, twoSided: true }),
+        emblem: makeMaterial({ name: 'heroEmblem', diffuse: [0, 0, 0], emissiveMap: star, emissive: [1, 1, 1], emissiveIntensity: 1.5, opacityMap: star, blend: 'additive', twoSided: true }),
+        buckle: makeMaterial({ name: 'heroBuckle', diffuse: [0, 0, 0], emissiveMap: buckleStar, emissive: [1, 1, 1], emissiveIntensity: 1.6, opacityMap: buckleStar, blend: 'additive', twoSided: true }),
         // black cape with lime piping + star on the back, bright lime lining
         capeOuter: makeMaterial({ name: 'heroCape', diffuse: [1, 1, 1], diffuseMap: canvasTexture(dev, cape.diffuse, { name: 'cape_d' }), emissiveMap: canvasTexture(dev, cape.emissive, { name: 'cape_e' }), emissiveIntensity: 1.4, gloss: 0.66, metalness: 0.15 }),
         capeInner: makeMaterial({ name: 'heroCapeLining', diffuse: [0.2, 0.36, 0.02], emissive: [0.45, 0.8, 0.08], emissiveIntensity: 0.22, gloss: 0.6 }),
@@ -59,7 +60,7 @@ function curlRand(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; retur
  * mesh per material, so the whole hero costs only a few dozen draw calls.
  */
 function buildAllStar(rig, s, M) {
-    const app = rig.app;
+    const app = rig.gfx;
     const noShadow = m => m !== M.accent && m !== M.cyan && m !== M.blade && m !== M.emblem && m !== M.buckle && m !== M.catchlight;
     // slightly larger head and shorter neck for youthful, heroic proportions
     rig.head.setLocalPosition(0, 0.585 * s, 0.005);
@@ -92,9 +93,8 @@ function buildAllStar(rig, s, M) {
         T.get(M.accent).box([sd * 0.2, 0.46, -0.115], [0.006, 0.045, 0.004], [0, 0, sd * 30]);
     }
     T.attach(app, rig.torso, noShadow);
-    const emblem = rig._part(rig.torso, 'plane', M.emblem, 0, 0.42 * s, -0.142 * s, 0.27 * s, 1, 0.27 * s);
+    const emblem = rig._part(rig.torso, 'plane', M.emblem, 0, 0.42 * s, -0.142 * s, 0.27 * s, 1, 0.27 * s, false);
     emblem.setLocalEulerAngles(-80, 0, 0);
-    emblem.render.castShadows = false;
 
     // ---------------- pelvis & belt
     const Pv = part();
@@ -108,9 +108,8 @@ function buildAllStar(rig, s, M) {
     }
     Pv.get(M.armor).box([0, 0.05, -0.128], [0.035, 0.03, 0.01]);
     Pv.attach(app, rig.pelvis, noShadow);
-    const buckle = rig._part(rig.pelvis, 'plane', M.buckle, 0, 0.05 * s, -0.14 * s, 0.07 * s, 1, 0.07 * s);
+    const buckle = rig._part(rig.pelvis, 'plane', M.buckle, 0, 0.05 * s, -0.14 * s, 0.07 * s, 1, 0.07 * s, false);
     buckle.setLocalEulerAngles(-90, 0, 0);
-    buckle.render.castShadows = false;
 
     // ---------------- head (face matches the reference: young, warm brown skin, brown eyes, curly black hair)
     const Hd = part();
@@ -207,14 +206,40 @@ function buildAllStar(rig, s, M) {
 }
 
 /** The hero: All-Star, black armoured suit with neon-lime and cyan details and a cloth cape. */
-export function createAllStarModel(app) {
-    const M = heroMaterials(app);
-    return new Humanoid(app, {
+export function createAllStarModel(g) {
+    const M = heroMaterials();
+    return new Humanoid(g, {
         name: 'AllStar',
         materials: M,
         scale: 1,
         build: buildAllStar,
         cloth: { outer: M.capeOuter, inner: M.capeInner, trim: M.capeTrim }
+    });
+}
+
+/**
+ * The real 3D All-Star (GLB from the asset pipeline, see tools/hero-*.mjs), driven by the
+ * same procedural animation as the fallback hero. Resolves to a Humanoid or rejects.
+ */
+export async function loadAllStarModel(g) {
+    // High quality (PC): 99k triangles + 4K texture; Medium/Low (iPhone): 49k + 2K. Both carry
+    // normal, metallic/roughness and emissive maps. Falls back to the light model on failure.
+    let asset;
+    if (QUALITY.name === 'high') {
+        try { asset = await g.loadModel(heroHdGlbUrl); } catch (err) { console.warn('[hero] HD model failed, using standard:', err); }
+    }
+    if (!asset) asset = await g.loadModel(heroGlbUrl);
+    const { root, nodes } = g.instantiateModel(asset, { castShadows: true });
+    return new Humanoid(g, {
+        name: 'AllStarGLB',
+        root,
+        bones: nodes,
+        // the model's bind pose has arms ~17 deg and legs ~10 deg out from the body;
+        // offset so the animation's "arms down" means arms down
+        rest: { armL: [0, 0, 15], armR: [0, 0, -15], legL: [0, 0, 7], legR: [0, 0, -7] },
+        // the cape is sculpted into the mesh: swing it less than the cloth cape
+        capeScale: 0.55,
+        capeMax: 50
     });
 }
 

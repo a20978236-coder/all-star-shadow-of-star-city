@@ -1,10 +1,10 @@
-import * as pc from 'playcanvas';
+import { Vec3 } from './core/math.js';
+import { setGfx } from './gfx/gfx.js';
 import { QUALITY, QUALITY_PRESETS, IS_TOUCH, saveQualityName } from './config.js';
 import { Input } from './core/Input.js';
 import { TouchControls } from './core/TouchControls.js';
 import { PhysicsWorld } from './core/Physics.js';
 import { City } from './world/City.js';
-import { Environment } from './world/Environment.js';
 import { ThirdPersonCamera } from './camera/ThirdPersonCamera.js';
 import { Player } from './player/Player.js';
 import { CombatSystem } from './combat/CombatSystem.js';
@@ -16,43 +16,41 @@ import { MissionSystem } from './missions/MissionSystem.js';
 import { HUD } from './ui/HUD.js';
 import { Rng } from './core/MathUtils.js';
 
-const SPAWN = new pc.Vec3(0, 0.05, 140);
+const SPAWN = new Vec3(0, 0.05, 140);
 
-/** Top-level game: owns the PlayCanvas app and wires every system together. */
+/**
+ * Top-level game: wires every system together. Rendering is delegated to a
+ * graphics backend factory (PlayCanvas or Three.js), so the same gameplay runs on both.
+ */
 export class Game {
-    constructor(canvas, uiRoot) {
+    constructor(canvas, uiRoot, createBackend) {
         this.canvas = canvas;
         this.uiRoot = uiRoot;
+        this.createBackend = createBackend;
         this.time = 0;
         this.dt = 0;
         this.paused = true;
         this.started = false;
         this.hitStopTimer = 0;
-        this._splashPos = new pc.Vec3();
+        this._splashPos = new Vec3();
         this.defeated = false;
     }
 
     init() {
         const canvas = this.canvas;
-        const app = new pc.Application(canvas, {
-            graphicsDeviceOptions: { antialias: false, alpha: false, powerPreference: 'high-performance' }
-        });
-        this.app = app;
-        app.setCanvasFillMode(pc.FILLMODE_FILL_WINDOW);
-        app.setCanvasResolution(pc.RESOLUTION_AUTO);
-        app.graphicsDevice.maxPixelRatio = QUALITY.pixelRatio;
-        const resize = () => app.resizeCanvas();
-        window.addEventListener('resize', resize);
-        window.addEventListener('orientationchange', () => setTimeout(resize, 250));
+        const g = this.createBackend(canvas);
+        this.gfx = g;
+        setGfx(g);
+        this.app = g.app;      // PlayCanvas app (undefined on the Three.js backend)
 
         this.input = new Input(canvas);
         this.hud = new HUD(this.uiRoot, this);
         this.physics = new PhysicsWorld();
 
-        this.env = new Environment(app);
-        this.city = new City(app, this.physics).build();
-        this.camera = new ThirdPersonCamera(app, this.physics);
-        this.fx = new Effects(app);
+        this.env = g.createEnvironment(this);
+        this.city = new City(g, this.physics).build();
+        this.camera = new ThirdPersonCamera(g, this.physics);
+        this.fx = new Effects(g);
         this.enemies = new EnemyManager(this);
         this.combat = new CombatSystem(this);
         this.player = new Player(this, SPAWN);
@@ -66,8 +64,7 @@ export class Game {
             this.touch.show(false);
         }
 
-        app.on('update', dt => this.update(dt));
-        app.start();
+        g.start(dt => this.update(dt));
 
         // Render one frame behind the title screen so the city is visible.
         this.camera.update(0.016, this.input, { pos: this.player.pos, mode: 'onfoot', heading: 0, speed: 0 });
@@ -89,7 +86,7 @@ export class Game {
             const r = rng.pick(roofs);
             if (chosen.every(c => Math.hypot(c.cx - r.cx, c.cz - r.cz) > 150)) chosen.push(r);
         }
-        chosen.forEach((r, i) => this.enemies.spawnGroup(`patrol${i}`, new pc.Vec3(r.cx, r.y, r.cz), rng.int(2, 4),
+        chosen.forEach((r, i) => this.enemies.spawnGroup(`patrol${i}`, new Vec3(r.cx, r.y, r.cz), rng.int(2, 4),
             { spread: Math.min(r.x1 - r.x0, r.z1 - r.z0) * 0.3, ambient: true, y: r.y, brutes: i % 3 === 0 ? 1 : 0 }));
     }
 
@@ -119,12 +116,9 @@ export class Game {
         if (!q) return;
         this._qualityName = name;
         saveQualityName(name);
-        this.app.graphicsDevice.maxPixelRatio = q.pixelRatio;
-        this.app.resizeCanvas();
+        this.gfx.setPixelRatio(q.pixelRatio);
         this.camera.applyQuality({ ...q, name });
-        this.app.scene.lighting.shadowsEnabled = q.shadows;
-        this.env.moonLight.light.castShadows = q.shadows;
-        this.env.moonLight.light.shadowResolution = q.shadowResolution;
+        this.env.applyQuality(q);
         this.hud.toast(`GRAPHICS: ${q.label.toUpperCase()}`);
     }
 

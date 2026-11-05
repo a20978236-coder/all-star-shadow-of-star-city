@@ -1,6 +1,5 @@
-import * as pc from 'playcanvas';
+import { Quat, Vec3 } from '../core/math.js';
 import { clamp, damp, dampAngle, DEG, RAD } from '../core/MathUtils.js';
-import { QUALITY, IS_MOBILE } from '../config.js';
 
 const PROFILES = {
     onfoot: { dist: 4.3, height: 1.6, shoulder: 0.6, fov: 62, follow: 0 },
@@ -16,75 +15,29 @@ const PROFILES = {
 /**
  * Cinematic third-person orbit camera: shoulder offset, collision with the
  * city, speed-based FOV, auto-follow during traversal, and screen shake.
- * Also owns the post-processing chain (bloom, vignette, grading, ACES).
+ * The post-processing chain is provided by the graphics backend.
  */
 export class ThirdPersonCamera {
-    constructor(app, physics) {
-        this.app = app;
+    /** g = graphics backend (see gfx/gfx.js). */
+    constructor(g, physics) {
+        this.gfx = g;
         this.physics = physics;
-        this.entity = new pc.Entity('MainCamera');
-        this.entity.addComponent('camera', {
-            clearColor: new pc.Color(0.02, 0.025, 0.05),
-            fov: 62,
-            nearClip: 0.1,
-            farClip: 3200
-        });
-        app.root.addChild(this.entity);
+        this.entity = g.camera({ fov: 62, near: 0.1, far: 3200, clearColor: [0.02, 0.025, 0.05] });
+        g.add(this.entity);
 
         this.yaw = 0;           // degrees
         this.pitch = -10;       // degrees (negative looks down)
-        this.pivot = new pc.Vec3();
+        this.pivot = new Vec3();
         this.curDist = 4.3;
         this.prof = { ...PROFILES.onfoot };
         this.trauma = 0;
         this.sensitivity = 1;
-        this._setupPost();
-    }
-
-    _setupPost() {
-        const cam = this.entity.camera;
-        try {
-            if (!pc.CameraFrame) throw new Error('CameraFrame unavailable');
-            const cf = new pc.CameraFrame(this.app, cam);
-            cf.rendering.toneMapping = pc.TONEMAP_ACES;
-            cf.bloom.blurLevel = IS_MOBILE ? 10 : 16;
-            cf.vignette.inner = 0.55;
-            cf.vignette.outer = 1.2;
-            cf.vignette.curvature = 0.5;
-            // Note: colour grading is left off - its contrast curve crushes the night-time shadows.
-            this.cameraFrame = cf;
-            this.applyQuality(QUALITY);
-        } catch (err) {
-            console.warn('[camera] post-processing disabled:', err);
-            cam.toneMapping = pc.TONEMAP_ACES;
-            cam.gammaCorrection = pc.GAMMA_SRGB;
-        }
+        // post chain lives in the backend (PlayCanvas CameraFrame / Three.js EffectComposer)
+        this.post = g.createPost(this.entity);
     }
 
     /** Apply a graphics preset to the post-processing chain (can be called at runtime). */
-    applyQuality(q) {
-        const cf = this.cameraFrame;
-        if (!cf) return;
-        cf.rendering.samples = q.msaa || 1;
-        cf.bloom.intensity = q.bloom ? 0.04 : 0;
-        cf.vignette.intensity = 0.42;
-        // ambient occlusion grounds characters and props (desktop "high")
-        cf.ssao.type = q.ssao ? pc.SSAOTYPE_LIGHTING : pc.SSAOTYPE_NONE;
-        cf.ssao.intensity = 0.55;
-        cf.ssao.radius = 22;
-        cf.ssao.samples = 10;
-        cf.ssao.scale = 0.5;
-        // cinematic depth of field: the hero stays sharp, the far skyline softens
-        cf.dof.enabled = !!q.dof;
-        cf.dof.nearBlur = false;
-        cf.dof.highQuality = false;
-        cf.dof.focusRange = 40;
-        cf.dof.blurRadius = 1.2;
-        cf.dof.focusDistance = 6;
-        cf.rendering.sceneDepthMap = !!(q.ssao || q.dof);
-        cf.fringing.intensity = 0;
-        cf.update();
-    }
+    applyQuality(q) { this.post.applyQuality(q); }
 
     shake(amount) { this.trauma = Math.min(1, this.trauma + amount); }
 
@@ -111,7 +64,7 @@ export class ThirdPersonCamera {
         }
 
         const fovBoost = clamp((target.speed - 8) * 0.35, 0, 14);
-        this.entity.camera.fov = this.prof.fov + fovBoost;
+        this.entity.setFov(this.prof.fov + fovBoost);
 
         // smoothed pivot (tighter vertically for rooftop running)
         const tx = target.pos.x, ty = target.pos.y + this.prof.height, tz = target.pos.z;
@@ -120,13 +73,13 @@ export class ThirdPersonCamera {
         this.pivot.y = damp(this.pivot.y, ty, 14, dt);
         this.pivot.z = damp(this.pivot.z, tz, 22, dt);
 
-        const q = new pc.Quat().setFromEulerAngles(this.pitch, this.yaw, 0);
-        const offset = new pc.Vec3(this.prof.shoulder, 0.25, this.prof.dist);
+        const q = new Quat().setFromEulerAngles(this.pitch, this.yaw, 0);
+        const offset = new Vec3(this.prof.shoulder, 0.25, this.prof.dist);
         q.transformVector(offset, offset);
         const want = offset.length();
         const dir = offset.clone().mulScalar(1 / want);
         let dist = want;
-        const right = new pc.Vec3(Math.cos(this.yaw * RAD), 0, -Math.sin(this.yaw * RAD));
+        const right = new Vec3(Math.cos(this.yaw * RAD), 0, -Math.sin(this.yaw * RAD));
         for (const [ox, oy] of [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.25], [0, -0.25]]) {
             const o = this.pivot.clone().add(right.clone().mulScalar(ox));
             o.y += oy;
@@ -144,14 +97,7 @@ export class ThirdPersonCamera {
         const t = performance.now() * 0.001;
         const sx = (Math.sin(t * 47) + Math.sin(t * 31)) * 0.5 * s * 0.35;
         const sy = (Math.sin(t * 53) + Math.sin(t * 23)) * 0.5 * s * 0.35;
-        if (this.cameraFrame && this.cameraFrame.dof.enabled) {
-            const fd = this.curDist + 0.5;
-            if (Math.abs(fd - this.cameraFrame.dof.focusDistance) > 0.25) {
-                this.cameraFrame.dof.focusDistance = fd;
-                this.cameraFrame.dof.focusRange = 40 + target.speed * 0.8;
-                this.cameraFrame.update();
-            }
-        }
+        this.post.setFocus(this.curDist + 0.5, 40 + target.speed * 0.8);
         this.entity.setPosition(pos.x, pos.y + sy, pos.z);
         this.entity.setEulerAngles(this.pitch + sy * 8, this.yaw + sx * 8, sx * 6);
     }

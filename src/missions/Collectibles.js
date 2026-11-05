@@ -1,4 +1,4 @@
-import * as pc from 'playcanvas';
+import { Vec3 } from '../core/math.js';
 import { makeMaterial } from '../world/Materials.js';
 import { canvasTexture, makeStarCanvas } from '../world/Textures.js';
 
@@ -8,20 +8,20 @@ export class Collectibles {
         this.game = game;
         this.items = [];
         this.collected = 0;
-        const tex = canvasTexture(game.app.graphicsDevice, makeStarCanvas('#ffe14a', true), { repeat: false, name: 'shard' });
-        const mat = makeMaterial({ name: 'shard', diffuse: [0, 0, 0], emissiveMap: tex, emissive: [1, 1, 1], emissiveIntensity: 7, opacityMap: tex, blend: pc.BLEND_ADDITIVE, twoSided: true });
+        const g = game.gfx;
+        const tex = canvasTexture(null, makeStarCanvas('#ffe14a', true), { repeat: false, name: 'shard' });
+        const mat = makeMaterial({ name: 'shard', diffuse: [0, 0, 0], emissiveMap: tex, emissive: [1, 1, 1], emissiveIntensity: 7, opacityMap: tex, blend: 'additive', twoSided: true });
         for (const r of roofs) {
-            const e = new pc.Entity('StarShard');
+            const e = g.node('StarShard');
             for (const ry of [0, 90]) {
-                const q = new pc.Entity();
-                q.addComponent('render', { type: 'plane', material: mat, castShadows: false, receiveShadows: false });
+                const q = g.mesh('plane', mat, { castShadows: false, receiveShadows: false });
                 q.setLocalScale(1.1, 1, 1.1);
                 q.setLocalEulerAngles(90, ry, 0);
                 e.addChild(q);
             }
-            const pos = new pc.Vec3(r.cx, r.y + 1.3, r.cz);
+            const pos = new Vec3(r.cx, r.y + 1.3, r.cz);
             e.setPosition(pos);
-            game.app.root.addChild(e);
+            g.add(e);
             this.items.push({ e, pos, taken: false, phase: Math.random() * 6 });
         }
         this.total = this.items.length;

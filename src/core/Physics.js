@@ -1,4 +1,4 @@
-import * as pc from 'playcanvas';
+import { Vec3 } from './math.js';
 
 /**
  * Lightweight kinematic collision world built from axis-aligned boxes.
@@ -56,7 +56,7 @@ export class PhysicsWorld {
      * Returns collision info: { hitWall, wallBox, wallNormal, hitCeiling }.
      */
     move(body, dx, dy, dz, stepHeight = 0) {
-        const info = { hitWall: false, wallBox: null, wallNormal: new pc.Vec3(), hitCeiling: false, landed: false };
+        const info = { hitWall: false, wallBox: null, wallNormal: new Vec3(), hitCeiling: false, landed: false };
         const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
         const steps = Math.max(1, Math.ceil(len / 0.3));
         const sx = dx / steps, sy = dy / steps, sz = dz / steps;
@@ -165,11 +165,11 @@ export class PhysicsWorld {
             if (t > 0 && t < best) { best = t; bestBox = null; bestAxis = 1; bestSign = 1; }
         }
         if (bestAxis < 0) return null;
-        const normal = new pc.Vec3(0, 0, 0);
+        const normal = new Vec3(0, 0, 0);
         if (bestAxis === 0) normal.x = bestSign; else if (bestAxis === 1) normal.y = bestSign; else normal.z = bestSign;
         return {
             dist: best,
-            point: new pc.Vec3(o[0] + d[0] * best, o[1] + d[1] * best, o[2] + d[2] * best),
+            point: new Vec3(o[0] + d[0] * best, o[1] + d[1] * best, o[2] + d[2] * best),
             normal,
             box: bestBox
         };

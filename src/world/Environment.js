@@ -160,6 +160,13 @@ export class Environment {
         this.rain = rain;
     }
 
+    /** Live quality switch (shadows). */
+    applyQuality(q) {
+        this.app.scene.lighting.shadowsEnabled = q.shadows;
+        this.moonLight.light.castShadows = q.shadows;
+        this.moonLight.light.shadowResolution = q.shadowResolution;
+    }
+
     update(dt, camPos, groundPos) {
         this.rain.setPosition(camPos.x, camPos.y + 24, camPos.z);
         if (this.splashes && groundPos) this.splashes.setPosition(groundPos.x, groundPos.y + 0.05, groundPos.z);

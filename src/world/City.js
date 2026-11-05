@@ -1,4 +1,4 @@
-import * as pc from 'playcanvas';
+import { Vec3 } from '../core/math.js';
 import { Rng, clamp, lerp } from '../core/MathUtils.js';
 import { BatchSet } from './GeometryBatch.js';
 import { makeMaterial, neonMaterial } from './Materials.js';
@@ -59,11 +59,12 @@ const SIGN_TEXTS = [
 ];
 
 export class City {
-    constructor(app, physics) {
-        this.app = app;
+    /** g = graphics backend (see gfx/gfx.js). */
+    constructor(g, physics) {
+        this.gfx = g;
         this.physics = physics;
-        this.root = new pc.Entity('City');
-        app.root.addChild(this.root);
+        this.root = g.node('City');
+        g.add(this.root);
         this.rng = new Rng(20261103);
         this.detailRng = new Rng(777);       // separate stream: added details never shift the original layout
         this.steamVents = [];
@@ -100,7 +101,7 @@ export class City {
 
     // ------------------------------------------------------------------ materials
     _createMaterials() {
-        const dev = this.app.graphicsDevice;
+        const dev = null;
         const M = this.materials;
         let seed = 100;
         const facadeSize = QUALITY.facadeDetail && QUALITY.name === 'high' ? 1024 : 512;
@@ -114,33 +115,30 @@ export class City {
                 emissiveMap: canvasTexture(dev, emissive, { name: `facade_${key}_e` }),
                 emissiveIntensity: 0.9,
                 gloss: key === 'glass' ? 0.86 : 0.42,
-                metalness: key === 'glass' ? 0.55 : 0.05
+                metalness: key === 'glass' ? 0.55 : 0.05,
+                normalMap: lin(normal, `facade_${key}_n`),
+                bumpiness: 0.7
             });
-            m.normalMap = lin(normal, `facade_${key}_n`);
-            m.bumpiness = 0.7;
-            m.update();
             M[`facade_${key}`] = m;
         }
         // Wet asphalt with mirror-like puddles (gloss map) and aggregate/cracks (normal map)
         const road = makeRoadMaps(QUALITY.name === 'low' ? 512 : 1024);
-        M.road = makeMaterial({ name: 'road', diffuse: [1, 1, 1], diffuseMap: canvasTexture(dev, road.diffuse, { name: 'road' }), tiling: [12, 12], gloss: 0.95, metalness: 0.12 });
-        M.road.glossMap = lin(road.gloss, 'road_g');
-        M.road.glossMapTiling = new pc.Vec2(12, 12);
-        M.road.normalMap = lin(road.normal, 'road_n');
-        M.road.normalMapTiling = new pc.Vec2(12, 12);
-        M.road.bumpiness = 0.45;
-        M.road.update();
+        M.road = makeMaterial({
+            name: 'road', diffuse: [1, 1, 1], diffuseMap: canvasTexture(dev, road.diffuse, { name: 'road' }), tiling: [12, 12], gloss: 0.95, metalness: 0.12,
+            glossMap: canvasTexture(dev, road.gloss, { name: 'road_g', srgb: false, gloss: true }), glossTiling: [12, 12],
+            normalMap: lin(road.normal, 'road_n'), normalTiling: [12, 12], bumpiness: 0.45
+        });
         const walk = makeSidewalkMaps(512);
-        M.sidewalk = makeMaterial({ name: 'sidewalk', diffuse: [1, 1, 1], diffuseMap: canvasTexture(dev, walk.diffuse, { name: 'sidewalk' }), gloss: 0.85, metalness: 0.05 });
-        M.sidewalk.glossMap = lin(walk.gloss, 'sidewalk_g');
-        M.sidewalk.normalMap = lin(walk.normal, 'sidewalk_n');
-        M.sidewalk.bumpiness = 0.6;
-        M.sidewalk.update();
-        M.roof = makeMaterial({ name: 'roof', diffuse: [1, 1, 1], diffuseMap: canvasTexture(dev, makeConcreteCanvas('#2b2c31', 9), { name: 'roof' }), gloss: 0.72, metalness: 0.05 });
-        M.roof.glossMap = M.sidewalk.glossMap;
-        M.roof.normalMap = M.sidewalk.normalMap;
-        M.roof.bumpiness = 0.4;
-        M.roof.update();
+        const walkGloss = canvasTexture(dev, walk.gloss, { name: 'sidewalk_g', srgb: false, gloss: true });
+        const walkNormal = lin(walk.normal, 'sidewalk_n');
+        M.sidewalk = makeMaterial({
+            name: 'sidewalk', diffuse: [1, 1, 1], diffuseMap: canvasTexture(dev, walk.diffuse, { name: 'sidewalk' }), gloss: 0.85, metalness: 0.05,
+            glossMap: walkGloss, normalMap: walkNormal, bumpiness: 0.6
+        });
+        M.roof = makeMaterial({
+            name: 'roof', diffuse: [1, 1, 1], diffuseMap: canvasTexture(dev, makeConcreteCanvas('#2b2c31', 9), { name: 'roof' }), gloss: 0.72, metalness: 0.05,
+            glossMap: walkGloss, normalMap: walkNormal, bumpiness: 0.4
+        });
         M.curb = makeMaterial({ name: 'curb', diffuse: [0.36, 0.36, 0.38], gloss: 0.7 });
         const shops = makeStorefrontCanvases(13);
         M.storefront = makeMaterial({
@@ -173,7 +171,7 @@ export class City {
         M.lampHead = neonMaterial([1.0, 0.85, 0.6], 3.5);
 
         const starTex = canvasTexture(dev, makeStarCanvas('#b8ff2c'), { repeat: false, name: 'star' });
-        M.starSign = makeMaterial({ name: 'starSign', diffuse: [0, 0, 0], emissiveMap: starTex, emissive: [1, 1, 1], emissiveIntensity: 6, opacityMap: starTex, blend: pc.BLEND_ADDITIVE, twoSided: true });
+        M.starSign = makeMaterial({ name: 'starSign', diffuse: [0, 0, 0], emissiveMap: starTex, emissive: [1, 1, 1], emissiveIntensity: 6, opacityMap: starTex, blend: 'additive', twoSided: true });
         SIGN_TEXTS.forEach(([text, col], idx) => {
             const t = canvasTexture(dev, makeSignCanvas(text, col), { repeat: false, name: `sign${idx}` });
             M[`sign${idx}`] = makeMaterial({ name: `sign${idx}`, diffuse: [0, 0, 0], emissiveMap: t, emissive: [1, 1, 1], emissiveIntensity: 3.5, twoSided: true });
@@ -199,13 +197,12 @@ export class City {
     }
 
     _buildGround() {
-        const e = new pc.Entity('Streets');
-        e.addComponent('render', { type: 'plane', material: this.materials.road, castShadows: false });
+        const g = this.gfx;
+        const e = g.mesh('plane', this.materials.road, { castShadows: false, name: 'Streets' });
         e.setLocalScale(CITY_EDGE * 2, 1, CITY_EDGE * 2);
         this.root.addChild(e);
 
-        const w = new pc.Entity('Water');
-        w.addComponent('render', { type: 'plane', material: this.materials.water, castShadows: false });
+        const w = g.mesh('plane', this.materials.water, { castShadows: false, name: 'Water' });
         w.setLocalScale(5000, 1, 5000);
         w.setLocalPosition(0, -1.2, 0);
         this.root.addChild(w);
@@ -458,8 +455,8 @@ export class City {
         s.addQuad(cx, 60, cz - 27.3, 40, 10, [0, 0, -1]);
         s.addQuad(cx, 60, cz + 27.3, 40, 10, [0, 0, 1]);
         this.footprints.push({ x0: cx - 27, z0: cz - 27, x1: cx + 27, z1: cz + 27, color: '#9be22a', kind: 'building', h: 205 });
-        this.landmarks.techcore = new pc.Vec3(cx, 205, cz);
-        this.landmarks.techcoreDeck = new pc.Vec3(cx, 70, cz - 24);
+        this.landmarks.techcore = new Vec3(cx, 205, cz);
+        this.landmarks.techcoreDeck = new Vec3(cx, 70, cz - 24);
         for (let k = 0; k < 4; k++) this.lightCandidates.push({ x: cx + (k % 2 ? 30 : -30), y: 8, z: cz + (k < 2 ? 30 : -30), color: COLORS.neonGreen, range: 26, intensity: 3, priority: true });
     }
 
@@ -488,8 +485,8 @@ export class City {
             this._b('neon_red', cx + ox, cz + oz).addBox(cx + ox - 0.6, 6, cz + oz - 0.3, cx + ox + 0.6, 6.6, cz + oz + 0.3);
             this.lightCandidates.push({ x: cx + ox, y: 6, z: cz + oz, color: COLORS.chaosRed, range: 28, intensity: 4, priority: true });
         }
-        this.landmarks.chaosPlaza = new pc.Vec3(cx, 0.2, cz + 4);
-        this.landmarks.chaosIntel = new pc.Vec3(cx + 6, 0.2, cz - 11);
+        this.landmarks.chaosPlaza = new Vec3(cx, 0.2, cz + 4);
+        this.landmarks.chaosIntel = new Vec3(cx + 6, 0.2, cz - 11);
     }
 
     _buildHarborPlaza(cx, cz) {
@@ -504,7 +501,7 @@ export class City {
         g(cx + 19, 34, cz - 24, cx + 22.5, 37, cz + 24);
         this._b('beacon', cx, cz).addBox(cx + 20.3, 37, cz - 0.4, cx + 21.2, 37.8, cz + 0.4);
         this.lightCandidates.push({ x: cx + 10, y: 10, z: cz, color: [0.6, 0.8, 1.0], range: 40, intensity: 3, priority: true });
-        this.landmarks.harbor = new pc.Vec3(cx - 4, 0.2, cz);
+        this.landmarks.harbor = new Vec3(cx - 4, 0.2, cz);
     }
 
     _containerStack(x, z, count, levels) {
@@ -658,24 +655,11 @@ export class City {
         }
         // steam rising from street vents (downtown / old city)
         if (QUALITY.name !== 'low') {
-            const dot = canvasTexture(this.app.graphicsDevice, makeDotCanvas(), { repeat: false, name: 'steamDot' });
+            const dot = canvasTexture(null, makeDotCanvas(), { repeat: false, name: 'steamDot' });
             const spots = [[0, 60], [80, -20], [-80, -100], [0, -140], [-160, 280], [160, 300], [-240, 220], [80, 140]];
             for (const [x, z] of spots) {
-                const e = new pc.Entity('steam');
-                e.addComponent('particlesystem', {
-                    numParticles: 28, lifetime: 4.5, rate: 0.16, rate2: 0.22,
-                    emitterShape: pc.EMITTERSHAPE_SPHERE, emitterRadius: 0.5,
-                    velocityGraph: new pc.CurveSet([[0, 0.2], [0, 1.4], [0, 0.1]]),
-                    velocityGraph2: new pc.CurveSet([[0, -0.2], [0, 0.9], [0, -0.1]]),
-                    scaleGraph: new pc.Curve([0, 0.8, 1, 4.5]),
-                    alphaGraph: new pc.Curve([0, 0, 0.15, 0.16, 1, 0]),
-                    colorGraph: new pc.CurveSet([[0, 0.75], [0, 0.78], [0, 0.85]]),
-                    colorMap: dot, blendType: pc.BLEND_NORMAL, depthWrite: false, lighting: false,
-                    loop: true, autoPlay: true, preWarm: true
-                });
-                e.setPosition(x, 0.1, z);
-                this.root.addChild(e);
-                this.steamVents.push(e);
+                const e = this.gfx.steam(x, 0.1, z, dot);
+                if (e) { this.root.addChild(e); this.steamVents.push(e); }
                 this._b('metal', x, z).addBox(x - 0.6, 0.0, z - 0.6, x + 0.6, 0.03, z + 0.6);
             }
         }
@@ -724,17 +708,16 @@ export class City {
         for (const [key, batch] of this.batches.map) {
             const mat = key.split('|')[1];
             const isNeon = mat.startsWith('neon') || mat.startsWith('signal') || mat === 'beacon' || mat === 'lampHead' || mat.startsWith('sign') || mat === 'starSign';
-            batch.build(this.app, this.materials[mat], this.root, key, { castShadows: !isNeon && mat !== 'roof', receiveShadows: !isNeon });
+            batch.build(this.gfx, this.materials[mat], this.root, key, { castShadows: !isNeon && mat !== 'roof', receiveShadows: !isNeon });
         }
         this.batches = null;
     }
 
     _buildLightPool() {
-        const n = QUALITY.maxStreetLights;
+        const n = Math.min(QUALITY.maxStreetLights, this.gfx.maxDynamicLights);
         this.lights = [];
         for (let k = 0; k < n; k++) {
-            const e = new pc.Entity(`poolLight${k}`);
-            e.addComponent('light', { type: 'omni', color: new pc.Color(1, 0.8, 0.5), intensity: 2, range: 16, castShadows: false, falloffMode: pc.LIGHTFALLOFF_LINEAR });
+            const e = this.gfx.pointLight({ name: `poolLight${k}`, color: [1, 0.8, 0.5], intensity: 2, range: 16, falloff: 'linear' });
             this.root.addChild(e);
             this.lights.push(e);
         }
@@ -745,13 +728,12 @@ export class City {
         this.drones = [];
         const bodyMat = makeMaterial({ diffuse: [0.05, 0.05, 0.06], gloss: 0.7, metalness: 0.8 });
         for (let k = 0; k < 5; k++) {
-            const e = new pc.Entity('drone');
-            const body = new pc.Entity();
-            body.addComponent('render', { type: 'box', material: bodyMat });
+            const g = this.gfx;
+            const e = g.node('drone');
+            const body = g.mesh('box', bodyMat);
             body.setLocalScale(1.2, 0.25, 1.2);
             e.addChild(body);
-            const light = new pc.Entity();
-            light.addComponent('render', { type: 'sphere', material: this.materials[k % 2 ? 'neon_cyan' : 'neon_red'], castShadows: false });
+            const light = g.mesh('sphere', this.materials[k % 2 ? 'neon_cyan' : 'neon_red'], { castShadows: false });
             light.setLocalScale(0.25, 0.25, 0.25);
             light.setLocalPosition(0, -0.2, 0);
             e.addChild(light);
@@ -791,14 +773,14 @@ export class City {
         this.time += dt;
         // blinking aircraft beacons
         const blink = (Math.sin(this.time * 3) > 0.6) ? 7 : 0.4;
-        if (this.materials.beacon.emissiveIntensity !== blink) { this.materials.beacon.emissiveIntensity = blink; this.materials.beacon.update(); }
+        if (this._blink !== blink) { this._blink = blink; this.gfx.setEmissive(this.materials.beacon, null, blink); }
 
         if (this.signalMats) {
             const t = this.time % 14;
             const phase = t < 6 ? 0 : t < 7.5 ? 1 : t < 13 ? 2 : 1;      // red, amber, green, amber
             if (phase !== this._signalPhase) {
                 this._signalPhase = phase;
-                this.signalMats.forEach((m, k) => { m.emissiveIntensity = k === phase ? 5 : 0.15; m.update(); });
+                this.signalMats.forEach((m, k) => this.gfx.setEmissive(m, null, k === phase ? 5 : 0.15));
             }
         }
         for (const d of this.drones) {
@@ -824,9 +806,7 @@ export class City {
                 if (!c) { e.enabled = false; continue; }
                 e.enabled = true;
                 e.setPosition(c.x, c.y, c.z);
-                e.light.color = new pc.Color(c.color[0], c.color[1], c.color[2]);
-                e.light.range = c.range;
-                e.light.intensity = c.intensity;
+                e.setLight({ color: c.color, range: c.range, intensity: c.intensity });
             }
         }
     }

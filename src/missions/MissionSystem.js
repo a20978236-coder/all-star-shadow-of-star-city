@@ -1,4 +1,3 @@
-import * as pc from 'playcanvas';
 import { makeMaterial } from '../world/Materials.js';
 import { COLORS } from '../config.js';
 
@@ -67,19 +66,18 @@ export class MissionSystem {
         this._mounted = false;
 
         // Waypoint beacon in the world
-        const mat = makeMaterial({ name: 'waypoint', diffuse: [0, 0, 0], emissive: COLORS.neonCyan, emissiveIntensity: 3, opacity: 0.35, blend: pc.BLEND_ADDITIVE, twoSided: true, noFog: true });
-        this.beacon = new pc.Entity('Waypoint');
-        const beam = new pc.Entity();
-        beam.addComponent('render', { type: 'cylinder', material: mat, castShadows: false, receiveShadows: false });
+        const mat = makeMaterial({ name: 'waypoint', diffuse: [0, 0, 0], emissive: COLORS.neonCyan, emissiveIntensity: 3, opacity: 0.35, blend: 'additive', twoSided: true, noFog: true });
+        const g = game.gfx;
+        this.beacon = g.node('Waypoint');
+        const beam = g.mesh('cylinder', mat, { castShadows: false, receiveShadows: false });
         beam.setLocalScale(1.2, 400, 1.2);
         beam.setLocalPosition(0, 200, 0);
         this.beacon.addChild(beam);
-        const ring = new pc.Entity();
-        ring.addComponent('render', { type: 'torus', material: mat, castShadows: false, receiveShadows: false });
+        const ring = g.mesh('torus', mat, { castShadows: false, receiveShadows: false });
         ring.setLocalScale(4, 4, 4);
         this.beacon.addChild(ring);
         this.ring = ring;
-        game.app.root.addChild(this.beacon);
+        g.add(this.beacon);
         this.beacon.enabled = false;
     }
 

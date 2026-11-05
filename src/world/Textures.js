@@ -1,4 +1,4 @@
-import * as pc from 'playcanvas';
+import { gfx } from '../gfx/gfx.js';
 import { Rng } from '../core/MathUtils.js';
 
 /**
@@ -11,21 +11,9 @@ function makeCanvas(w, h) {
     return c;
 }
 
-export function canvasTexture(device, canvas, { srgb = true, repeat = true, mipmaps = true, name = 'tex' } = {}) {
-    const tex = new pc.Texture(device, {
-        name,
-        width: canvas.width,
-        height: canvas.height,
-        format: srgb ? pc.PIXELFORMAT_SRGBA8 : pc.PIXELFORMAT_RGBA8,
-        mipmaps,
-        minFilter: mipmaps ? pc.FILTER_LINEAR_MIPMAP_LINEAR : pc.FILTER_LINEAR,
-        magFilter: pc.FILTER_LINEAR,
-        addressU: repeat ? pc.ADDRESS_REPEAT : pc.ADDRESS_CLAMP_TO_EDGE,
-        addressV: repeat ? pc.ADDRESS_REPEAT : pc.ADDRESS_CLAMP_TO_EDGE,
-        anisotropy: 4
-    });
-    tex.setSource(canvas);
-    return tex;
+/** Create a GPU texture from a canvas via the active graphics backend. (`device` is unused, kept for compatibility.) */
+export function canvasTexture(device, canvas, opts = {}) {
+    return gfx().texture(canvas, opts);
 }
 
 /**

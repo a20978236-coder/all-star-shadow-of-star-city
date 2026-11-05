@@ -1,9 +1,8 @@
-import * as pc from 'playcanvas';
+import { Vec3, Quat } from '../core/math.js';
 
-const tmpM = new pc.Mat4();
-const tmpQ = new pc.Quat();
-const tmpP = new pc.Vec3();
-const tmpN = new pc.Vec3();
+const tmpQ = new Quat();
+const tmpP = new Vec3();
+const tmpN = new Vec3();
 
 /**
  * Builds smooth organic shapes (ellipsoids, tapered limbs, rotated boxes) and
@@ -128,23 +127,21 @@ export class ShapeBuilder {
         }
     }
 
-    toMesh(device) {
+    /** Geometry arrays for gfx.customMesh(). */
+    toData() {
         this.fixWinding();
-        const mesh = new pc.Mesh(device);
-        mesh.setPositions(new Float32Array(this.positions));
-        mesh.setNormals(new Float32Array(this.normals));
-        mesh.setUvs(0, new Float32Array(this.uvs));
-        mesh.setIndices(this.vertexCount > 65535 ? new Uint32Array(this.indices) : new Uint16Array(this.indices));
-        mesh.update(pc.PRIMITIVE_TRIANGLES);
-        return mesh;
+        return {
+            positions: new Float32Array(this.positions),
+            normals: new Float32Array(this.normals),
+            uvs: new Float32Array(this.uvs),
+            indices: this.vertexCount > 65535 ? new Uint32Array(this.indices) : new Uint16Array(this.indices)
+        };
     }
 
-    /** Attach as a render component child of `parent`. */
-    attach(app, parent, material, { castShadows = true, name = 'shape' } = {}) {
+    /** Attach as a mesh child of `parent` (g = graphics backend). */
+    attach(g, parent, material, { castShadows = true, name = 'shape' } = {}) {
         if (this.empty) return null;
-        const e = new pc.Entity(name);
-        const mi = new pc.MeshInstance(this.toMesh(app.graphicsDevice), material);
-        e.addComponent('render', { meshInstances: [mi], castShadows, receiveShadows: true });
+        const e = g.customMesh(this.toData(), material, { castShadows, receiveShadows: true, name });
         parent.addChild(e);
         return e;
     }
@@ -158,7 +155,7 @@ export class PartSet {
         if (!b) { b = new ShapeBuilder(); this.map.set(mat, b); }
         return b;
     }
-    attach(app, parent, castShadowsFor = () => true) {
-        for (const [mat, b] of this.map) b.attach(app, parent, mat, { castShadows: castShadowsFor(mat) });
+    attach(g, parent, castShadowsFor = () => true) {
+        for (const [mat, b] of this.map) b.attach(g, parent, mat, { castShadows: castShadowsFor(mat) });
     }
 }

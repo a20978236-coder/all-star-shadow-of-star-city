@@ -1,8 +1,8 @@
-import * as pc from 'playcanvas';
+import { Vec3 } from '../core/math.js';
 import { COMBAT, PLAYER, WORLD, COLORS } from '../config.js';
 import { headingFromDir, dirFromHeading } from '../core/MathUtils.js';
 
-const tmp = new pc.Vec3();
+const tmp = new Vec3();
 
 /**
  * Free-flow melee combat: lunge strikes that chain into combos, counters
@@ -128,10 +128,10 @@ export class CombatSystem {
         this.comboTimer = COMBAT.comboWindow;
         this.bestCombo = Math.max(this.bestCombo, this.combo);
         const heavy = finisher || this.combo % 5 === 0;
-        const dir = dirFromHeading(p.heading, new pc.Vec3());
+        const dir = dirFromHeading(p.heading, new Vec3());
         enemy.takeHit({ damage: finisher ? 99 : 1, dir, force: heavy ? 12 : 5, finisher });
         p.energy = Math.min(PLAYER.maxEnergy, p.energy + COMBAT.energyPerHit * (1 + this.combo * 0.05));
-        const hitPos = new pc.Vec3(enemy.pos.x, enemy.pos.y + 1.3, enemy.pos.z);
+        const hitPos = new Vec3(enemy.pos.x, enemy.pos.y + 1.3, enemy.pos.z);
         this.game.fx.spark(hitPos, heavy ? 18 : 10, heavy ? 10 : 7);
         this.game.camera.shake(heavy ? 0.35 : 0.18);
         this.game.hitStop(heavy ? 0.09 : 0.045);
@@ -150,11 +150,11 @@ export class CombatSystem {
         p.grapple.cancel();
         p.setState('counter');
         p.invuln = 0.6;
-        const dir = dirFromHeading(p.heading, new pc.Vec3());
+        const dir = dirFromHeading(p.heading, new Vec3());
         for (const e of threats) {
             e.countered(dir);
             this.combo++;
-            this.game.fx.spark(new pc.Vec3(e.pos.x, e.pos.y + 1.4, e.pos.z), 14, 8);
+            this.game.fx.spark(new Vec3(e.pos.x, e.pos.y + 1.4, e.pos.z), 14, 8);
         }
         this.comboTimer = COMBAT.comboWindow;
         this.bestCombo = Math.max(this.bestCombo, this.combo);
@@ -176,11 +176,11 @@ export class CombatSystem {
             const d = Math.hypot(dx, dz);
             if (d < COMBAT.specialRadius && Math.abs(e.pos.y - p.pos.y) < 3) hits.push([e, dx / (d || 1), dz / (d || 1)]);
         }
-        for (const [e, x, z] of hits) e.knockdown(new pc.Vec3(x, 0, z), 14, 2);
+        for (const [e, x, z] of hits) e.knockdown(new Vec3(x, 0, z), 14, 2);
         this.combo += hits.length;
         if (hits.length) { this.comboTimer = COMBAT.comboWindow; this.bestCombo = Math.max(this.bestCombo, this.combo); }
         this.game.fx.shockwave(p.pos, COMBAT.specialRadius, COLORS.neonGreen);
-        this.game.fx.spark(new pc.Vec3(p.pos.x, p.pos.y + 1, p.pos.z), 30, 12, 0.14);
+        this.game.fx.spark(new Vec3(p.pos.x, p.pos.y + 1, p.pos.z), 30, 12, 0.14);
         this.game.camera.shake(0.6);
         this.game.hitStop(0.12);
         this.game.hud.combo(this.combo, 'STAR BURST');

@@ -12,6 +12,22 @@ It runs in desktop browsers (keyboard + mouse) and on iPhone Safari (touch contr
 
 ---
 
+## Two renderers, one game
+
+The game now ships with **two interchangeable renderers** that share all gameplay code
+(player, combat, enemies, grapple, bike, missions, physics, input, touch controls, HUD):
+
+| Page | Renderer | Status |
+| --- | --- | --- |
+| `index.html` → `src/main.js` | PlayCanvas 2.23.3 | The live game |
+| `three/index.html` → `src/three/main.js` | Three.js 0.180 | Side-by-side port (preview) |
+
+Rendering goes through a small graphics layer (`src/gfx/gfx.js`) implemented by
+`src/gfx/PcGfx.js` and `src/gfx/ThreeGfx.js`. The Three.js node wrapper mirrors the subset of
+the PlayCanvas Entity API the game uses (same euler order, `-Z` forward, spot lights along `-Y`),
+so gameplay code is renderer-agnostic. During development open `http://localhost:5173/three/`
+for the Three.js version; on GitHub Pages it lives at `…/three/`.
+
 ## Quick start
 
 Requirements: **Node.js 18+** (20 or 22 recommended) and npm.
@@ -134,14 +150,72 @@ resolution, rain density, light count and disables shadows for performance.
   combat/traversal poses.
 * **Quality presets** — Low / Medium / High (pause menu → GRAPHICS). PC defaults to High, iPhone to Medium.
 
+## 3D hero model (glTF)
+
+All-Star is a real 3D model in two detail levels, picked by the graphics preset:
+
+| File | Used on | Triangles | Textures |
+| --- | --- | --- | --- |
+| `src/assets/models/allstar_hd.glb` (≈6 MB) | High (PC) | 99k | 4096² colour, 2048² normal + metallic/roughness + glow |
+| `src/assets/models/allstar.glb` (≈3 MB) | Medium / Low (iPhone) | 49k | 2048² colour, 1024² normal + metallic/roughness + glow |
+
+Both have a 14-joint skeleton. Both renderers load it at start-up and swap it in for the
+built-in hero; if it fails to load, the built-in hero stays. Add `?hero=classic` to the URL to
+force the built-in hero.
+
+The skeleton's joints are named like the game's procedural rig (`body, pelvis, torso, head,
+armL/foreL, armR/foreR, legL/shinL, legR/shinR, cape1, cape2`), so every existing animation
+(idle, walk, run, sprint, jump, land, glide, swing, combat, ride) drives the model directly.
+
+### Hero asset pipeline
+
+The source was a 1M-triangle, unrigged, AI-generated GLB. To rebuild from a new source model:
+
+1. Put the raw model at `assets-src/allstar-raw.glb` (git-ignored; keep the original somewhere safe).
+2. Run:
+
+```bash
+npm run hero:build
+```
+
+| Step | Script | What it does |
+| --- | --- | --- |
+| 1 | `tools/hero-optimize.mjs` | weld + meshoptimizer simplify (1M → 50k triangles) |
+| 2 | `tools/hero-rig.mjs` | face −Z, scale to 1.85 m, build the skeleton, capsule skin weights, cut cape↔limb "bridge" triangles the AI mesh fused, smooth weights over mesh edges, smooth normals, 2048² JPEG |
+| 2b | `tools/hero-rig.mjs` (restyle) | matches the official character sheet (`docs/reference/allstar-character-sheet.webp`): black cape shell, lime star projected onto the back of the cape, emissive map so lime/cyan details glow. Skip with `--no-restyle` |
+| 2c | `tools/hero-rig.mjs` (maps) | detail normal map from the texture's high-frequency luminance (skin kept smooth), metallic/roughness by material (skin, armour, cape fabric, glowing trim), MikkTSpace tangents. Skip with `--no-maps` |
+| 3 | `tools/hero-rig-check.mjs` | poses the rig (run / glide / kick) and reports stretched triangles |
+
+**Rigged FBX (e.g. from Meshy):** `npm run hero:extract-fbx-rig` reads a rigged FBX
+(`assets-src/allstar-rigged.fbx`) and dumps its skeleton and weights to `.cache/fbx_rig.json`.
+The supplied *Neon_Star_Sentinel.fbx* is a separate low-detail regeneration (3.5k triangles,
+knees ~15 cm higher, different cape), so its rig is not transferred onto the detailed mesh.
+To get a professional rig that matches exactly, rig the detailed model itself (upload
+`allstar_hd.glb` or the raw GLB to Meshy/Mixamo's auto-rigger).
+
+**Making a new model from the character sheet:** this pipeline can't create 3D from a 2D
+image. Generate a GLB with an image-to-3D tool (for example Meshy, Tripo or Hunyuan3D, using
+the sheet's front/side/back views as multi-view input) or commission an artist, save it as
+`assets-src/allstar-raw.glb`, and run `npm run hero:build`.
+
+Joint positions in `hero-rig.mjs` were measured for this model; a different model needs them
+re-measured. For production quality, a hand-rigged model (Blender/Maya, or Mixamo auto-rig)
+with authored animation clips will deform better than automatic weights.
+
 ## Project structure
 
 ```
 index.html                 Page shell (canvas + UI root, iOS meta tags)
 vite.config.js             Vite config (LAN dev server, relative base)
 public/favicon.svg
+three/index.html           Three.js page
 src/
-  main.js                  Entry point
+  main.js                  Entry point (PlayCanvas)
+  three/main.js            Entry point (Three.js)
+  three/ThreeEnvironment.js  Three.js sky, fog, moonlight, IBL, rain, splashes, lightning
+  gfx/gfx.js               Renderer-agnostic graphics layer (contract)
+  gfx/PcGfx.js             PlayCanvas backend
+  gfx/ThreeGfx.js          Three.js backend (Entity-like node wrapper, materials, post FX)
   Game.js                  Creates the PlayCanvas app and wires all systems; main update loop
   config.js                All gameplay tuning values + quality presets (mobile vs desktop)
   core/
@@ -151,13 +225,14 @@ src/
     MathUtils.js           Math helpers + deterministic RNG
   world/
     City.js                Procedural districts, buildings, rooftops, props, signs, lamps, light pool, minimap image
-    Environment.js         Moonlight, fog, sky dome, moon, rain
+    Environment.js         PlayCanvas moonlight, fog, sky dome, moon, rain
     GeometryBatch.js       Merges static geometry into a few meshes
     Materials.js           Material helpers (lit, neon/emissive)
     Textures.js            Canvas-generated textures + normal/gloss maps (facades, roads, sidewalks, shops, suit)
     EnvMap.js              Procedural night-city environment map for reflections
+  assets/models/allstar.glb  The 3D hero (built by tools/hero-*.mjs)
   characters/
-    Humanoid.js            Primitive-based rig with procedural animation
+    Humanoid.js            Rig + procedural animation (drives built-in parts or a GLB skeleton)
     Characters.js          All-Star (sculpted hero) and Chaos Empire model factories
     ShapeBuilder.js        Merges ellipsoids / tapered limbs / boxes into single meshes
     Cape.js                Verlet cloth cape simulation
